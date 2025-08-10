@@ -4,6 +4,9 @@ import { useMutation, useQuery } from "convex/react";
 import { api } from "../convex/_generated/api";
 import { Id } from "../convex/_generated/dataModel";
 import { toast } from "sonner";
+import { GameHistory } from "./GameHistory";
+import { GameChat } from "./GameChat";
+import { FloatingChat } from "./FloatingChat";
 
 export function TypingDuelGame() {
   const [roomId, setRoomId] = useState<Id<"gameRooms"> | null>(null);
@@ -17,11 +20,43 @@ export function TypingDuelGame() {
   const toggleReady = useMutation(api.gameRooms.toggleReady);
   const updateProgress = useMutation(api.gameRooms.updateProgress);
   const startNewRound = useMutation(api.gameRooms.startNewRound);
+  const prevReadyStatesRef = useRef<Record<string, boolean>>({});
+  const prevGameStateRef = useRef<string>("");
 
   const roomState = useQuery(
     api.gameRooms.getRoomState,
     roomId ? { roomId } : "skip"
   );
+
+  const gameHistory = useQuery(
+    api.gameRooms.getGameHistory,
+    roomId ? { roomId } : "skip"
+  );
+
+  console.log("gameHistory", gameHistory);
+
+  useEffect(() => {
+    if (!roomState?.players) return;
+
+    // Compare current ready states to previous ready states
+    roomState.players.forEach((player) => {
+      const prevReady = prevReadyStatesRef.current[player._id];
+      if (prevReady !== undefined && prevReady !== player.isReady) {
+        // Play sound when ready status changes
+        const audio = new Audio("/ready.mp3");
+        audio.play().catch(() => {});
+      }
+    });
+
+    // Store current states
+    prevReadyStatesRef.current = roomState.players.reduce(
+      (acc, player) => {
+        acc[player._id] = player.isReady;
+        return acc;
+      },
+      {} as Record<string, boolean>
+    );
+  }, [roomState?.players]);
 
   const handleCreateRoom = async () => {
     try {
@@ -102,6 +137,25 @@ export function TypingDuelGame() {
     }, 100);
     return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    if (!roomState?.room) return;
+
+    // Detect transition from playing → finished
+    if (
+      prevGameStateRef.current === "playing" &&
+      roomState.room.gameState === "finished"
+    ) {
+      const winner = roomState.room.winner;
+      if (winner === currentPlayer?.userId) {
+        new Audio("/win.mp3").play().catch(() => {});
+      } else {
+        new Audio("/lose.mp3").play().catch(() => {});
+      }
+    }
+
+    prevGameStateRef.current = roomState.room.gameState;
+  }, [roomState?.room, roomState?.room?.gameState, roomState?.room?.winner]);
 
   if (!roomId) {
     return (
@@ -374,34 +428,18 @@ export function TypingDuelGame() {
               </p>
 
               {/* Final Results */}
-              <div className="space-y-2 text-sm">
-                <h4 className="font-semibold text-yellow-800">Final Times:</h4>
-                {players
-                  .filter((p) => p.completionTime)
-                  .sort(
-                    (a, b) =>
-                      getCompletionTime(a.startTime, a.completionTime) -
-                      getCompletionTime(b.startTime, b.completionTime)
-                  )
-                  .map((player, index) => (
-                    <div
-                      key={player._id}
-                      className="flex justify-between items-center bg-white rounded px-3 py-2"
-                    >
-                      <span className="font-medium">
-                        {index === 0 ? "🥇" : "🥈"} {player.name}
-                      </span>
-                      <span className="font-mono text-blue-600 font-semibold">
-                        {formatTime(
-                          getCompletionTime(
-                            player.startTime,
-                            player.completionTime
-                          )
-                        )}
-                      </span>
-                    </div>
-                  ))}
-              </div>
+              {room.gameState === "finished" &&
+                (room?.winner === currentPlayer?.userId ? (
+                  <div className="bg-green-700 p-4 rounded-lg text-white text-center">
+                    <h2 className="text-3xl font-bold mb-2">🏆 You Win!</h2>
+                    <p className="text-lg">You typed like lightning! ⚡</p>
+                  </div>
+                ) : (
+                  <div className="bg-red-700 p-4 rounded-lg text-white text-center">
+                    <h2 className="text-3xl font-bold mb-2">💀 You Lose</h2>
+                    <p className="text-lg">Better luck next time!</p>
+                  </div>
+                ))}
             </div>
 
             <button
@@ -413,6 +451,10 @@ export function TypingDuelGame() {
           </div>
         )}
       </div>
+
+      <FloatingChat roomId={roomId} />
+
+      <GameHistory roomId={roomId} />
 
       {/* Instructions */}
       <div className="bg-white rounded-lg shadow-lg p-6">

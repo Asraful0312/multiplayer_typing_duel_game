@@ -1,6 +1,7 @@
 import { v } from "convex/values";
-import { query, mutation } from "./_generated/server";
+import { query, mutation, action } from "./_generated/server";
 import { getAuthUserId } from "@convex-dev/auth/server";
+import { api } from "./_generated/api";
 
 const PHRASES = [
   "The quick brown fox jumps over the lazy dog",
@@ -12,8 +13,27 @@ const PHRASES = [
   "Five quacking zephyrs jolt my wax bed",
   "The five boxing wizards jump quickly",
   "Jackdaws love my big sphinx of quartz",
-  "Mr. Jock, TV quiz PhD., bags few lynx"
+  "Mr. Jock, TV quiz PhD., bags few lynx",
 ];
+
+export const getGameHistory = query({
+  args: { roomId: v.id("gameRooms") },
+  handler: async ({ db }, { roomId }) => {
+    return await db
+      .query("gameHistory")
+      .withIndex("by_room", (q) => q.eq("roomId", roomId))
+      .collect();
+  },
+});
+
+export const gameHistory = action({
+  args: { roomId: v.id("gameRooms") },
+  handler: async (ctx, args): Promise<any> => {
+    return await ctx.runQuery(api.gameRooms.getGameHistory, {
+      roomId: args.roomId,
+    });
+  },
+});
 
 async function requireAuth(ctx: any) {
   const userId = await getAuthUserId(ctx);
@@ -34,7 +54,7 @@ export const createRoom = mutation({
 
     // Generate a 4-character room code
     const roomCode = Math.random().toString(36).substring(2, 6).toUpperCase();
-    
+
     const roomId = await ctx.db.insert("gameRooms", {
       roomCode,
       gameState: "waiting",
@@ -74,7 +94,9 @@ export const joinRoom = mutation({
     // Check if user is already in the room
     const existingPlayer = await ctx.db
       .query("players")
-      .withIndex("by_user_and_room", (q) => q.eq("userId", userId).eq("roomId", room._id))
+      .withIndex("by_user_and_room", (q) =>
+        q.eq("userId", userId).eq("roomId", room._id)
+      )
       .unique();
 
     if (existingPlayer) {
@@ -107,7 +129,7 @@ export const getRoomState = query({
   args: { roomId: v.id("gameRooms") },
   handler: async (ctx, args) => {
     const userId = await requireAuth(ctx);
-    
+
     const room = await ctx.db.get(args.roomId);
     if (!room) {
       return null;
@@ -118,7 +140,7 @@ export const getRoomState = query({
       .withIndex("by_room", (q) => q.eq("roomId", args.roomId))
       .collect();
 
-    const currentPlayer = players.find(p => p.userId === userId);
+    const currentPlayer = players.find((p) => p.userId === userId);
 
     return {
       room,
@@ -136,7 +158,9 @@ export const toggleReady = mutation({
 
     const player = await ctx.db
       .query("players")
-      .withIndex("by_user_and_room", (q) => q.eq("userId", userId).eq("roomId", args.roomId))
+      .withIndex("by_user_and_room", (q) =>
+        q.eq("userId", userId).eq("roomId", args.roomId)
+      )
       .unique();
 
     if (!player) {
@@ -153,10 +177,10 @@ export const toggleReady = mutation({
       .withIndex("by_room", (q) => q.eq("roomId", args.roomId))
       .collect();
 
-    if (allPlayers.length === 2 && allPlayers.every(p => p.isReady)) {
+    if (allPlayers.length === 2 && allPlayers.every((p) => p.isReady)) {
       // Start the game
       const randomPhrase = PHRASES[Math.floor(Math.random() * PHRASES.length)];
-      
+
       await ctx.db.patch(args.roomId, {
         gameState: "playing",
         currentPhrase: randomPhrase,
@@ -179,7 +203,7 @@ export const toggleReady = mutation({
 });
 
 export const updateProgress = mutation({
-  args: { 
+  args: {
     roomId: v.id("gameRooms"),
     progress: v.string(),
   },
@@ -193,7 +217,9 @@ export const updateProgress = mutation({
 
     const player = await ctx.db
       .query("players")
-      .withIndex("by_user_and_room", (q) => q.eq("userId", userId).eq("roomId", args.roomId))
+      .withIndex("by_user_and_room", (q) =>
+        q.eq("userId", userId).eq("roomId", args.roomId)
+      )
       .unique();
 
     if (!player) {
@@ -207,15 +233,35 @@ export const updateProgress = mutation({
     // Check if player completed the phrase
     if (room.currentPhrase && args.progress === room.currentPhrase) {
       const completionTime = Date.now();
-      
+
       // Update player's completion time
       await ctx.db.patch(player._id, {
         completionTime,
       });
 
+      // Mark game as finished and set winner
       await ctx.db.patch(args.roomId, {
         gameState: "finished",
         winner: userId,
+      });
+
+      // Insert game history record
+      const players = await ctx.db
+        .query("players")
+        .withIndex("by_room", (q) => q.eq("roomId", args.roomId))
+        .collect();
+
+      await ctx.db.insert("gameHistory", {
+        roomId: args.roomId,
+        endedAt: completionTime,
+        winnerId: userId,
+        players: players.map((p) => ({
+          userId: p.userId,
+          name: p.name,
+          wpm: p.wpm,
+          accuracy: p.accuracy,
+          completionTime: p.completionTime,
+        })),
       });
     }
   },
@@ -224,8 +270,6 @@ export const updateProgress = mutation({
 export const startNewRound = mutation({
   args: { roomId: v.id("gameRooms") },
   handler: async (ctx, args) => {
-    const userId = await requireAuth(ctx);
-
     const room = await ctx.db.get(args.roomId);
     if (!room) {
       throw new Error("Room not found");
