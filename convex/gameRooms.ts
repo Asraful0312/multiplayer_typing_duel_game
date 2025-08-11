@@ -300,3 +300,33 @@ export const startNewRound = mutation({
     }
   },
 });
+
+export const cleanupRoomIfEmpty = mutation({
+  args: { roomId: v.id("gameRooms") },
+  handler: async ({ db }, { roomId }) => {
+    // Check if there are players left in the room
+    const players = await db
+      .query("players")
+      .withIndex("by_room", (q) => q.eq("roomId", roomId))
+      .collect();
+
+    if (players.length > 0) return; // Not empty yet
+
+    // Delete chat messages
+    const chats = await db
+      .query("gameChats")
+      .filter((q) => q.eq(q.field("roomId"), roomId))
+      .collect();
+    await Promise.all(chats.map((msg) => db.delete(msg._id)));
+
+    // Delete game history
+    const history = await db
+      .query("gameHistory")
+      .filter((q) => q.eq(q.field("roomId"), roomId))
+      .collect();
+    await Promise.all(history.map((h) => db.delete(h._id)));
+
+    // Finally delete the game room
+    await db.delete(roomId);
+  },
+});

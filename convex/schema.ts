@@ -49,7 +49,8 @@ const applicationTables = {
     roomId: v.id("gameRooms"),
     userId: v.id("users"),
     userName: v.string(),
-    message: v.string(),
+    type: v.union(v.literal("emoji"), v.literal("sticker")),
+    content: v.string(), // emoji character or sticker image URL
     sentAt: v.number(),
   })
     .index("by_room", ["roomId"])

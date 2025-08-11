@@ -3,9 +3,26 @@ import { mutation, query } from "./_generated/server";
 import { getAuthUserId } from "@convex-dev/auth/server";
 
 // Send a chat message
-export const sendMessage = mutation({
-  args: { roomId: v.id("gameRooms"), message: v.string() },
-  handler: async (ctx, { roomId, message }) => {
+
+// Get messages for a room (with real-time updates)
+export const getMessages = query({
+  args: { roomId: v.id("gameRooms") },
+  handler: async (ctx, { roomId }) => {
+    return await ctx.db
+      .query("gameChats")
+      .withIndex("by_room_and_time", (q) => q.eq("roomId", roomId))
+      .order("asc")
+      .collect();
+  },
+});
+
+export const sendEmojiOrSticker = mutation({
+  args: {
+    roomId: v.id("gameRooms"),
+    type: v.union(v.literal("emoji"), v.literal("sticker")),
+    content: v.string(),
+  },
+  handler: async (ctx, { roomId, type, content }) => {
     const userId = await getAuthUserId(ctx);
     if (!userId) throw new Error("Not authenticated");
 
@@ -15,15 +32,15 @@ export const sendMessage = mutation({
     await ctx.db.insert("gameChats", {
       roomId,
       userId,
-      userName: user.name || user.email || "Anonymous",
-      message,
+      userName: user.name || "Anonymous",
+      type,
+      content,
       sentAt: Date.now(),
     });
   },
 });
 
-// Get messages for a room (with real-time updates)
-export const getMessages = query({
+export const getEmojiAndStickers = query({
   args: { roomId: v.id("gameRooms") },
   handler: async (ctx, { roomId }) => {
     return await ctx.db

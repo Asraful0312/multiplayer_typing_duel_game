@@ -5,8 +5,9 @@ import { api } from "../convex/_generated/api";
 import { Id } from "../convex/_generated/dataModel";
 import { toast } from "sonner";
 import { GameHistory } from "./GameHistory";
-import { GameChat } from "./GameChat";
+
 import { FloatingChat } from "./FloatingChat";
+import { EmojiStickerSender } from "./EmojiStickerSender";
 
 export function TypingDuelGame() {
   const [roomId, setRoomId] = useState<Id<"gameRooms"> | null>(null);
@@ -257,9 +258,28 @@ export function TypingDuelGame() {
         {/* Players Status */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
           {players.map((player) => (
-            <div key={player._id} className="bg-gray-50 rounded-lg p-4">
+            <div
+              key={player._id}
+              className={`bg-gray-50 rounded-lg p-4 ${player._id === currentPlayer?._id ? "border-primary/80" : "border-red-400"}`}
+            >
               <div className="flex justify-between items-center">
-                <span className="font-semibold">{player.name}</span>
+                <div className="flex items-center gap-2">
+                  <div
+                    className={`size-3 rounded-full ${player._id === currentPlayer?._id ? "bg-primary" : "bg-red-500"}`}
+                  />
+                  <p className="font-semibold">
+                    {player._id === currentPlayer?._id ? (
+                      <p className="flex items-center gap-2">
+                        {player.name}{" "}
+                        <p className="text-sm font-normal bg-gray-100 rounded py-0.5 px-3">
+                          You
+                        </p>
+                      </p>
+                    ) : (
+                      player.name
+                    )}
+                  </p>
+                </div>
                 <span
                   className={`px-2 py-1 rounded text-xs ${
                     player.isReady
@@ -274,7 +294,7 @@ export function TypingDuelGame() {
                 <div className="mt-2">
                   <div className="w-full bg-gray-200 rounded-full h-2">
                     <div
-                      className="bg-blue-600 h-2 rounded-full transition-all duration-200"
+                      className={` h-2 rounded-full transition-all duration-200 ${player._id === currentPlayer?._id ? "bg-blue-600" : "bg-red-600"}`}
                       style={{
                         width: `${getProgressPercentage(player.progress, room.currentPhrase)}%`,
                       }}
@@ -417,15 +437,21 @@ export function TypingDuelGame() {
         {room.gameState === "finished" && room.winner && (
           <div className="text-center space-y-4">
             <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6">
-              <h3 className="text-2xl font-bold text-yellow-800 mb-4">
-                🏆 Game Over!
-              </h3>
-              <p className="text-lg mb-4">
-                <span className="font-semibold">
-                  {players.find((p) => p.userId === room.winner)?.name}
-                </span>{" "}
-                wins the duel!
-              </p>
+              <div className="flex flex-col items-center">
+                <h3 className="text-2xl font-bold text-yellow-800 ">
+                  Game Over!
+                </h3>
+                <div className="flex items-end gap-1 mb-4">
+                  <img className="size-10" src="/win.gif" alt="win" />
+
+                  <p className="text-lg ">
+                    <span className="font-semibold">
+                      {players.find((p) => p.userId === room.winner)?.name}
+                    </span>{" "}
+                    wins the duel!
+                  </p>
+                </div>
+              </div>
 
               {/* Final Results */}
               {room.gameState === "finished" &&
@@ -452,7 +478,7 @@ export function TypingDuelGame() {
         )}
       </div>
 
-      <FloatingChat roomId={roomId} />
+      <EmojiStickerSender roomId={roomId} />
 
       <GameHistory roomId={roomId} />
 

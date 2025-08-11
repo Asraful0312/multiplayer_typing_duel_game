@@ -8,11 +8,13 @@ export function GameHistory({ roomId }: { roomId: Id<"gameRooms"> }) {
   const gameHistory = useQuery(api.gameRooms.getGameHistory, { roomId });
 
   if (gameHistory === undefined) {
-    return <div>Loading game history...</div>;
+    return <div className="text-center">Loading game history...</div>;
   }
 
   if (!gameHistory || gameHistory.length === 0) {
-    return <div>No game history found for this room.</div>;
+    return (
+      <div className="text-center">No game history found for this room.</div>
+    );
   }
 
   const formatTime = (ms?: number) => {
