@@ -6,11 +6,18 @@ import { TypingDuelGame } from "@/TypingDuelGame";
 import { SignInForm } from "@/SignInForm";
 
 export default function Home() {
+  const loggedInUser = useQuery(api.auth.loggedInUser);
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
       <header className="sticky top-0 z-10  backdrop-blur-sm h-16 flex justify-between items-center  px-4">
         <h2 className="text-xl font-semibold text-blue-600">Typing Battle</h2>
         <Authenticated>
+          {loggedInUser && (
+            <div className="flex items-center gap-2 bg-gray-100 px-3 py-1 rounded-full">
+              <img src="/dollar.png" alt="score" className="size-5 shrink-0" />{" "}
+              <p>{loggedInUser.score || "00"}</p>
+            </div>
+          )}
           <SignOutButton />
         </Authenticated>
       </header>

@@ -3,6 +3,7 @@ import { useState, useEffect } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../convex/_generated/api";
 import { Id } from "../convex/_generated/dataModel";
+import { X } from "lucide-react";
 
 export function EmojiStickerSender({ roomId }: { roomId: Id<"gameRooms"> }) {
   const send = useMutation(api.chat.sendEmojiOrSticker);
@@ -38,7 +39,8 @@ export function EmojiStickerSender({ roomId }: { roomId: Id<"gameRooms"> }) {
   const stickers = [
     "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQ9rydf87d6dWmn4q7fxCMTzaBG6-_Zi4xY61ahSWqfHeH3N-qoR0Bujk-CwTaGEfXeKQI&usqp=CAU",
     "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTaV-xrzMmFnC5KT4i3oel17LmqImsc-Ay04A&s",
-    "/stickers/thumbs.gif",
+    "https://media.tenor.com/Er_DtkmQZ8wAAAAe/zarek-tia-tareq-zia.png",
+    "https://bongoboltu.com/content/images/size/w720/2023/08/mujibba.jpg",
   ];
 
   return (
@@ -48,7 +50,7 @@ export function EmojiStickerSender({ roomId }: { roomId: Id<"gameRooms"> }) {
         onClick={() => setIsPickerOpen((prev) => !prev)}
         className="fixed bottom-6 left-6 bg-blue-600 hover:bg-blue-700 text-white p-4 rounded-full shadow-lg z-50"
       >
-        {isPickerOpen ? "✖" : "😊"}
+        {isPickerOpen ? <X className="size-5 shrink-0 text-white" /> : "😊"}
       </button>
 
       {/* Emoji/Sticker Picker Panel */}

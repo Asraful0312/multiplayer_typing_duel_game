@@ -18,6 +18,7 @@ import type * as chat from "../chat.js";
 import type * as gameRooms from "../gameRooms.js";
 import type * as http from "../http.js";
 import type * as router from "../router.js";
+import type * as score from "../score.js";
 
 /**
  * A utility for referencing Convex functions in your app's API.
@@ -33,6 +34,7 @@ declare const fullApi: ApiFromModules<{
   gameRooms: typeof gameRooms;
   http: typeof http;
   router: typeof router;
+  score: typeof score;
 }>;
 export declare const api: FilterApi<
   typeof fullApi,

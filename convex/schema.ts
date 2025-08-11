@@ -55,6 +55,25 @@ const applicationTables = {
   })
     .index("by_room", ["roomId"])
     .index("by_room_and_time", ["roomId", "sentAt"]),
+
+  playerScores: defineTable({
+    playerId: v.id("users"), // or user ID if you have auth
+    username: v.string(),
+    score: v.number(), // total accumulated score
+  }).index("by_player", ["playerId"]),
+
+  users: defineTable({
+    name: v.optional(v.string()),
+    image: v.optional(v.string()),
+    email: v.optional(v.string()),
+    emailVerificationTime: v.optional(v.number()),
+    phone: v.optional(v.string()),
+    phoneVerificationTime: v.optional(v.number()),
+    isAnonymous: v.optional(v.boolean()),
+
+    //custom fields
+    score: v.optional(v.number()),
+  }),
 };
 
 export default defineSchema({

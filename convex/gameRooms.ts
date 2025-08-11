@@ -301,32 +301,52 @@ export const startNewRound = mutation({
   },
 });
 
-export const cleanupRoomIfEmpty = mutation({
+export const leaveRoom = mutation({
   args: { roomId: v.id("gameRooms") },
-  handler: async ({ db }, { roomId }) => {
-    // Check if there are players left in the room
-    const players = await db
+  handler: async (ctx, { roomId }) => {
+    const userId = await requireAuth(ctx);
+
+    // 1) Find and delete the player's row (if exists)
+    const player = await ctx.db
+      .query("players")
+      .withIndex("by_user_and_room", (q) =>
+        q.eq("userId", userId).eq("roomId", roomId)
+      )
+      .unique();
+
+    if (player) {
+      await ctx.db.delete(player._id);
+    }
+
+    // 2) Check remaining players in room (use index)
+    const remainingPlayers = await ctx.db
       .query("players")
       .withIndex("by_room", (q) => q.eq("roomId", roomId))
       .collect();
 
-    if (players.length > 0) return; // Not empty yet
+    if (remainingPlayers.length > 0) {
+      // other players still present -> do not clean up room
+      return;
+    }
 
-    // Delete chat messages
-    const chats = await db
+    // 3) No players left -> delete chats, history, and the room
+    const chats = await ctx.db
       .query("gameChats")
-      .filter((q) => q.eq(q.field("roomId"), roomId))
+      .withIndex("by_room", (q) => q.eq("roomId", roomId))
       .collect();
-    await Promise.all(chats.map((msg) => db.delete(msg._id)));
+    for (const c of chats) {
+      await ctx.db.delete(c._id);
+    }
 
-    // Delete game history
-    const history = await db
+    const history = await ctx.db
       .query("gameHistory")
-      .filter((q) => q.eq(q.field("roomId"), roomId))
+      .withIndex("by_room", (q) => q.eq("roomId", roomId))
       .collect();
-    await Promise.all(history.map((h) => db.delete(h._id)));
+    for (const h of history) {
+      await ctx.db.delete(h._id);
+    }
 
-    // Finally delete the game room
-    await db.delete(roomId);
+    // Finally delete the room itself
+    await ctx.db.delete(roomId);
   },
 });

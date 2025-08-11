@@ -5,37 +5,42 @@ import { api } from "../convex/_generated/api";
 import { Id } from "../convex/_generated/dataModel";
 import { toast } from "sonner";
 import { GameHistory } from "./GameHistory";
-
-import { FloatingChat } from "./FloatingChat";
 import { EmojiStickerSender } from "./EmojiStickerSender";
+import useLeaveRoomOnExit from "./hooks/useLeaveRoom";
+import CreateOrJoinRoom from "./components/CreateOrJoinRoom";
+import useGameRoom from "./hooks/useGameRoom";
+import {
+  formatTime,
+  getAccuracy,
+  getCompletionTime,
+  getElapsedTime,
+  handleCopyText,
+} from "./lib/game";
+
+import { Copy } from "lucide-react";
 
 export function TypingDuelGame() {
   const [roomId, setRoomId] = useState<Id<"gameRooms"> | null>(null);
-  const [roomCode, setRoomCode] = useState("");
-  const [inputText, setInputText] = useState("");
+
   const [currentTime, setCurrentTime] = useState(Date.now());
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const createRoom = useMutation(api.gameRooms.createRoom);
-  const joinRoom = useMutation(api.gameRooms.joinRoom);
-  const toggleReady = useMutation(api.gameRooms.toggleReady);
   const updateProgress = useMutation(api.gameRooms.updateProgress);
-  const startNewRound = useMutation(api.gameRooms.startNewRound);
   const prevReadyStatesRef = useRef<Record<string, boolean>>({});
   const prevGameStateRef = useRef<string>("");
+  const updatePlayerScore = useMutation(api.score.updatePlayerScore);
+
+  useLeaveRoomOnExit(roomId);
 
   const roomState = useQuery(
     api.gameRooms.getRoomState,
     roomId ? { roomId } : "skip"
   );
 
-  const gameHistory = useQuery(
-    api.gameRooms.getGameHistory,
-    roomId ? { roomId } : "skip"
-  );
+  const { handleStartNewRound, handleToggleReady, inputText, setInputText } =
+    useGameRoom(roomId!);
 
-  console.log("gameHistory", gameHistory);
-
+  //play ready sound
   useEffect(() => {
     if (!roomState?.players) return;
 
@@ -59,40 +64,6 @@ export function TypingDuelGame() {
     );
   }, [roomState?.players]);
 
-  const handleCreateRoom = async () => {
-    try {
-      const result = await createRoom();
-      setRoomId(result.roomId);
-      toast.success(`Room created! Code: ${result.roomCode}`);
-    } catch {
-      toast.error("Failed to create room");
-    }
-  };
-
-  const handleJoinRoom = async () => {
-    if (!roomCode.trim()) {
-      toast.error("Please enter a room code");
-      return;
-    }
-
-    try {
-      const result = await joinRoom({ roomCode: roomCode.toUpperCase() });
-      setRoomId(result.roomId);
-      toast.success("Joined room successfully!");
-    } catch {
-      toast.error("Failed to join room. Check the room code.");
-    }
-  };
-
-  const handleToggleReady = async () => {
-    if (!roomId) return;
-    try {
-      await toggleReady({ roomId });
-    } catch {
-      toast.error("Failed to update ready status");
-    }
-  };
-
   const handleInputChange = async (value: string) => {
     if (
       !roomId ||
@@ -105,16 +76,6 @@ export function TypingDuelGame() {
 
     setInputText(value);
     await updateProgress({ roomId, progress: value });
-  };
-
-  const handleStartNewRound = async () => {
-    if (!roomId) return;
-    try {
-      await startNewRound({ roomId });
-      setInputText("");
-    } catch {
-      toast.error("Failed to start new round");
-    }
   };
 
   // Focus input when game starts
@@ -142,12 +103,31 @@ export function TypingDuelGame() {
   useEffect(() => {
     if (!roomState?.room) return;
 
-    // Detect transition from playing → finished
     if (
       prevGameStateRef.current === "playing" &&
       roomState.room.gameState === "finished"
     ) {
       const winner = roomState.room.winner;
+
+      if (winner) {
+        // Winner gets +10
+        updatePlayerScore({
+          playerId: winner,
+          outcome: "win",
+        }).catch(() => toast.error("Failed to update score"));
+
+        // Loser gets −5
+        const loser =
+          roomState.players.find((p) => p.userId !== winner) || null;
+        if (loser) {
+          updatePlayerScore({
+            playerId: loser.userId,
+            outcome: "lose",
+          }).catch(() => toast.error("Failed to update score"));
+        }
+      }
+
+      // Play sounds
       if (winner === currentPlayer?.userId) {
         new Audio("/win.mp3").play().catch(() => {});
       } else {
@@ -156,44 +136,16 @@ export function TypingDuelGame() {
     }
 
     prevGameStateRef.current = roomState.room.gameState;
-  }, [roomState?.room, roomState?.room?.gameState, roomState?.room?.winner]);
+  }, [
+    roomId,
+    roomState?.room,
+    roomState?.room?.gameState,
+    roomState?.room?.winner,
+    updatePlayerScore,
+  ]);
 
   if (!roomId) {
-    return (
-      <div className="max-w-md mx-auto space-y-6">
-        <div className="bg-white rounded-lg shadow-lg p-6">
-          <h2 className="text-2xl font-bold text-center mb-6">Join the Duel</h2>
-
-          <div className="space-y-4">
-            <button
-              onClick={handleCreateRoom}
-              className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg font-semibold hover:bg-blue-700 transition-colors"
-            >
-              Create New Room
-            </button>
-
-            <div className="text-center text-gray-500">or</div>
-
-            <div className="space-y-3">
-              <input
-                type="text"
-                placeholder="Enter room code"
-                value={roomCode}
-                onChange={(e) => setRoomCode(e.target.value.toUpperCase())}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                maxLength={4}
-              />
-              <button
-                onClick={handleJoinRoom}
-                className="w-full bg-green-600 text-white py-3 px-4 rounded-lg font-semibold hover:bg-green-700 transition-colors"
-              >
-                Join Room
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
+    return <CreateOrJoinRoom setRoomId={setRoomId} />;
   }
 
   if (!roomState) {
@@ -205,43 +157,11 @@ export function TypingDuelGame() {
   }
 
   const { room, players, currentPlayer } = roomState;
-  const otherPlayer = players.find((p) => p.userId !== currentPlayer?.userId);
+  // const otherPlayer = players.find((p) => p.userId !== currentPlayer?.userId);
 
   const getProgressPercentage = (progress: string, phrase: string) => {
     if (!phrase) return 0;
     return Math.min((progress.length / phrase.length) * 100, 100);
-  };
-
-  const getAccuracy = (progress: string, phrase: string) => {
-    if (!progress || !phrase) return 100;
-    let correct = 0;
-    for (let i = 0; i < progress.length; i++) {
-      if (progress[i] === phrase[i]) {
-        correct++;
-      }
-    }
-    return progress.length > 0
-      ? Math.round((correct / progress.length) * 100)
-      : 100;
-  };
-
-  const formatTime = (milliseconds: number) => {
-    const seconds = Math.floor(milliseconds / 1000);
-    const ms = Math.floor((milliseconds % 1000) / 100);
-    return `${seconds}.${ms}s`;
-  };
-
-  const getElapsedTime = (startTime?: number) => {
-    if (!startTime || startTime > Date.now()) return 0;
-    return currentTime - startTime;
-  };
-
-  const getCompletionTime = (
-    startTime: number | undefined,
-    completionTime: number | undefined
-  ) => {
-    if (!startTime || !completionTime) return 0;
-    return completionTime - startTime;
   };
 
   return (
@@ -249,7 +169,15 @@ export function TypingDuelGame() {
       {/* Room Info */}
       <div className="bg-white rounded-lg shadow-lg p-6">
         <div className="flex justify-between items-center mb-4">
-          <h2 className="text-2xl font-bold">Room: {room.roomCode}</h2>
+          <div className="flex items-center gap-4">
+            <h2 className="text-2xl font-bold">Room: {room.roomCode}</h2>
+            <button
+              className="bg-gray-100 p-2 rounded"
+              onClick={() => handleCopyText(room.roomCode)}
+            >
+              <Copy className="size-4 shrink-0" />{" "}
+            </button>
+          </div>
           <div className="text-sm text-gray-500">
             Players: {players.length}/2
           </div>
@@ -323,7 +251,13 @@ export function TypingDuelGame() {
                         </span>
                       ) : (
                         <span>
-                          ⏱️ {formatTime(getElapsedTime(player.startTime))}
+                          ⏱️{" "}
+                          {formatTime(
+                            getElapsedTime(
+                              player.startTime as number,
+                              currentTime
+                            )
+                          )}
                         </span>
                       )}
                     </div>
