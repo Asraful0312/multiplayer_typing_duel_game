@@ -2,6 +2,8 @@
 import { useAuthActions } from "@convex-dev/auth/react";
 import { useState } from "react";
 import { toast } from "sonner";
+import { Input } from "./components/ui/input";
+import { Button } from "./components/ui/button";
 
 export function SignInForm() {
   const { signIn } = useAuthActions();
@@ -9,7 +11,7 @@ export function SignInForm() {
   const [submitting, setSubmitting] = useState(false);
 
   return (
-    <div className="w-full">
+    <div className="w-full bg-white p-10 rounded-md border">
       <form
         className="flex flex-col gap-form-field"
         onSubmit={(e) => {
@@ -32,24 +34,17 @@ export function SignInForm() {
           });
         }}
       >
-        <input
-          className="auth-input-field"
-          type="email"
-          name="email"
-          placeholder="Email"
-          required
-        />
-        <input
-          className="auth-input-field"
+        <Input type="email" name="email" placeholder="Email" required />
+        <Input
           type="password"
           name="password"
           placeholder="Password"
           required
         />
-        <button className="auth-button" type="submit" disabled={submitting}>
+        <Button type="submit" disabled={submitting}>
           {flow === "signIn" ? "Sign in" : "Sign up"}
-        </button>
-        <div className="text-center text-sm text-secondary">
+        </Button>
+        <div className="text-center text-sm text-black">
           <span>
             {flow === "signIn"
               ? "Don't have an account? "
@@ -57,7 +52,7 @@ export function SignInForm() {
           </span>
           <button
             type="button"
-            className="text-primary hover:text-primary-hover hover:underline font-medium cursor-pointer"
+            className="text-black"
             onClick={() => setFlow(flow === "signIn" ? "signUp" : "signIn")}
           >
             {flow === "signIn" ? "Sign up instead" : "Sign in instead"}
@@ -66,12 +61,12 @@ export function SignInForm() {
       </form>
       <div className="flex items-center justify-center my-3">
         <hr className="my-4 grow border-gray-200" />
-        <span className="mx-4 text-secondary">or</span>
+        <span className="mx-4 text-black">or</span>
         <hr className="my-4 grow border-gray-200" />
       </div>
-      <button className="auth-button" onClick={() => void signIn("anonymous")}>
+      <Button className="auth-button" onClick={() => void signIn("anonymous")}>
         Sign in anonymously
-      </button>
+      </Button>
     </div>
   );
 }

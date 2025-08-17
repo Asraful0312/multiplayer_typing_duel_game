@@ -4,6 +4,8 @@ import { toast } from "sonner";
 import { api } from "../../convex/_generated/api";
 import { useState } from "react";
 import { Id } from "../../convex/_generated/dataModel";
+import { Button } from "./ui/button";
+import { Input } from "./ui/input";
 
 type Props = {
   setRoomId: (v: Id<"gameRooms">) => void;
@@ -54,36 +56,34 @@ const CreateOrJoinRoom = ({ setRoomId }: Props) => {
     }
   };
   return (
-    <div className="max-w-md mx-auto space-y-6">
+    <div className="w-[400px] mx-auto space-y-6">
       <div className="bg-white rounded-lg shadow-lg p-6">
         <h2 className="text-2xl font-bold text-center mb-6">Join the Duel</h2>
 
         <div className="space-y-4">
-          <button
-            onClick={handleCreateRoom}
-            className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg font-semibold hover:bg-blue-700 transition-colors"
-          >
+          <Button onClick={handleCreateRoom} className="w-full">
             Create New Room
-          </button>
+          </Button>
 
           <div className="text-center text-gray-500">or</div>
 
           <div className="space-y-3">
-            <input
+            <Input
               type="text"
               placeholder="Enter room code"
               value={roomCode}
               onChange={(e) => setRoomCode(e.target.value.toUpperCase())}
               onFocus={handleInputFocus}
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full"
               maxLength={4}
             />
-            <button
+            <Button
               onClick={handleJoinRoom}
-              className="w-full bg-green-600 text-white py-3 px-4 rounded-lg font-semibold hover:bg-green-700 transition-colors"
+              className="w-full"
+              variant="secondary"
             >
               Join Room
-            </button>
+            </Button>
           </div>
         </div>
       </div>

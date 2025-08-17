@@ -3,6 +3,43 @@ import { v } from "convex/values";
 import { authTables } from "@convex-dev/auth/server";
 
 const applicationTables = {
+  storeItems: defineTable({
+    name: v.string(),
+    category: v.string(),
+    price: v.number(),
+    rarity: v.string(),
+    description: v.string(),
+    image: v.string(),
+    type: v.union(v.literal("emoji"), v.literal("sticker")),
+    content: v.string(), // emoji character or sticker URL
+    stats: v.optional(
+      v.object({
+        type: v.optional(v.string()),
+        effect: v.optional(v.string()),
+        duration: v.optional(v.string()),
+      })
+    ),
+    isActive: v.optional(v.boolean()), // to enable/disable items
+  }).index("by_category", ["category"]),
+
+  inventory: defineTable({
+    userId: v.id("users"),
+    itemId: v.id("storeItems"),
+    purchasedAt: v.number(),
+    isEquip: v.optional(v.boolean()),
+    quantity: v.optional(v.number()), // for consumable items
+  })
+    .index("by_user", ["userId"])
+    .index("by_user_and_item", ["userId", "itemId"]),
+
+  transactions: defineTable({
+    userId: v.id("users"),
+    itemId: v.id("storeItems"),
+    amount: v.number(), // negative for purchases
+    type: v.union(v.literal("purchase"), v.literal("refund")),
+    createdAt: v.number(),
+  }).index("by_user", ["userId"]),
+
   gameRooms: defineTable({
     roomCode: v.string(),
     currentPhrase: v.optional(v.string()),
@@ -73,6 +110,15 @@ const applicationTables = {
 
     //custom fields
     score: v.optional(v.number()),
+    wins: v.optional(v.number()),
+    losses: v.optional(v.number()),
+    totalGames: v.optional(v.number()),
+    coins: v.optional(v.number()),
+  }),
+
+  leaderboard: defineTable({
+    name: v.string(),
+    score: v.number(),
   }),
 };
 

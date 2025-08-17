@@ -38,3 +38,49 @@ export const handleCopyText = (text: string) => {
     () => toast.error("Failed to copy text.")
   );
 };
+
+export const getWPM = (
+  progress: string,
+  startTime: number,
+  endTime?: number
+) => {
+  if (!startTime) return 0;
+  const end = endTime ?? Date.now();
+  const elapsedMinutes = (end - startTime) / 60000;
+  if (elapsedMinutes <= 0) return 0;
+  return Math.round(progress.length / 5 / elapsedMinutes);
+};
+
+// Add these helper functions to your lib/game.ts or create a new utils file
+
+export const calculateWinPercentage = (
+  wins: number = 0,
+  totalGames: number = 0
+): number => {
+  if (totalGames === 0) return 0;
+  return Math.round((wins / totalGames) * 100);
+};
+
+export const formatWinPercentage = (
+  wins: number = 0,
+  totalGames: number = 0
+): string => {
+  const percentage = calculateWinPercentage(wins, totalGames);
+  return `${percentage}%`;
+};
+
+export const getPlayerStats = (user: any) => {
+  const wins = user?.wins || 0;
+  const losses = user?.losses || 0;
+  const totalGames = user?.totalGames || 0;
+  const score = user?.score || 0;
+  const winPercentage = calculateWinPercentage(wins, totalGames);
+
+  return {
+    wins,
+    losses,
+    totalGames,
+    score,
+    winPercentage,
+  };
+};

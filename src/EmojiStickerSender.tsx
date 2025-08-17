@@ -6,8 +6,14 @@ import { Id } from "../convex/_generated/dataModel";
 import { X } from "lucide-react";
 
 export function EmojiStickerSender({ roomId }: { roomId: Id<"gameRooms"> }) {
+  const userId = useQuery(api.auth.loggedInUser)?._id;
+
   const send = useMutation(api.chat.sendEmojiOrSticker);
   const messages = useQuery(api.chat.getEmojiAndStickers, { roomId });
+  const userStickers = useQuery(
+    api.store.getUserStickers,
+    userId ? { userId } : "skip"
+  );
 
   const [isPickerOpen, setIsPickerOpen] = useState(false);
   const [fallingItems, setFallingItems] = useState<
@@ -35,13 +41,20 @@ export function EmojiStickerSender({ roomId }: { roomId: Id<"gameRooms"> }) {
     return () => clearTimeout(timer);
   }, [messages]);
 
+  // Default emojis (always available)
   const emojis = ["😂", "❤️", "🔥", "👍", "🎉", "🥳", "😭"];
-  const stickers = [
+
+  // Default stickers (always available)
+  const defaultStickers = [
     "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQ9rydf87d6dWmn4q7fxCMTzaBG6-_Zi4xY61ahSWqfHeH3N-qoR0Bujk-CwTaGEfXeKQI&usqp=CAU",
     "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTaV-xrzMmFnC5KT4i3oel17LmqImsc-Ay04A&s",
-    "https://media.tenor.com/Er_DtkmQZ8wAAAAe/zarek-tia-tareq-zia.png",
-    "https://bongoboltu.com/content/images/size/w720/2023/08/mujibba.jpg",
   ];
+
+  // Combine default stickers with user-owned premium stickers
+  // const allStickers = [
+  //   ...defaultStickers,
+  //   ...(userStickers?.map((sticker) => sticker?.content) || []),
+  // ];
 
   return (
     <>
@@ -55,28 +68,78 @@ export function EmojiStickerSender({ roomId }: { roomId: Id<"gameRooms"> }) {
 
       {/* Emoji/Sticker Picker Panel */}
       {isPickerOpen && (
-        <div className="fixed bottom-20 left-6 bg-white shadow-lg rounded-lg p-3 z-50">
-          <div className="flex gap-2 flex-wrap max-w-xs">
-            {emojis.map((emoji) => (
-              <button
-                key={emoji}
-                className="text-2xl"
-                onClick={() => send({ roomId, type: "emoji", content: emoji })}
-              >
-                {emoji}
-              </button>
-            ))}
+        <div className="fixed bottom-20 left-6 bg-white shadow-lg rounded-lg p-3 z-50 max-w-sm">
+          {/* Emojis Section */}
+          <div className="mb-4">
+            <h4 className="text-sm font-semibold text-gray-700 mb-2">Emojis</h4>
+            <div className="flex gap-2 flex-wrap">
+              {emojis.map((emoji) => (
+                <button
+                  key={emoji}
+                  className="text-2xl hover:bg-gray-100 p-1 rounded transition-colors"
+                  onClick={() =>
+                    send({ roomId, type: "emoji", content: emoji })
+                  }
+                >
+                  {emoji}
+                </button>
+              ))}
+            </div>
           </div>
-          <div className="flex gap-2 mt-2 flex-wrap max-w-xs">
-            {stickers.map((url) => (
-              <img
-                key={url}
-                src={url}
-                alt="sticker"
-                className="w-10 h-10 cursor-pointer shrink-0 object-cover"
-                onClick={() => send({ roomId, type: "sticker", content: url })}
-              />
-            ))}
+
+          {/* Stickers Section */}
+          <div>
+            <h4 className="text-sm font-semibold text-gray-700 mb-2">
+              Stickers
+              {userStickers && userStickers.length > 0 && (
+                <span className="text-xs text-blue-600 ml-1">
+                  ({userStickers.length} owned)
+                </span>
+              )}
+            </h4>
+            <div className="flex gap-2 flex-wrap max-h-40 overflow-y-auto">
+              {/* Default stickers */}
+              {defaultStickers.map((url, index) => (
+                <div key={`default-${index}`} className="relative">
+                  <img
+                    src={url}
+                    alt="default sticker"
+                    className="w-10 h-10 cursor-pointer shrink-0 object-cover rounded hover:opacity-80 transition-opacity"
+                    onClick={() =>
+                      send({ roomId, type: "sticker", content: url })
+                    }
+                  />
+                </div>
+              ))}
+
+              {/* User-owned premium stickers */}
+              {userStickers?.map((sticker) => (
+                <div key={sticker?._id} className="relative">
+                  <img
+                    src={sticker?.content}
+                    alt={sticker?.name}
+                    className="w-10 h-10 cursor-pointer shrink-0 object-cover rounded hover:opacity-80 transition-opacity border-2 border-yellow-400"
+                    onClick={() =>
+                      send({
+                        roomId,
+                        type: "sticker",
+                        content: sticker?.content as string,
+                      })
+                    }
+                    title={`${sticker?.name} (Premium)`}
+                  />
+                  {/* Premium indicator */}
+                  <div className="absolute -top-1 -right-1 w-3 h-3 bg-yellow-400 rounded-full border border-white"></div>
+                </div>
+              ))}
+
+              {/* Show message if no premium stickers */}
+              {(!userStickers || userStickers.length === 0) && (
+                <div className="text-xs text-gray-500 p-2 bg-gray-50 rounded text-center">
+                  Visit the store to unlock premium stickers!
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}

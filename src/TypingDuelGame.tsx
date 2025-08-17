@@ -9,26 +9,21 @@ import { EmojiStickerSender } from "./EmojiStickerSender";
 import useLeaveRoomOnExit from "./hooks/useLeaveRoom";
 import CreateOrJoinRoom from "./components/CreateOrJoinRoom";
 import useGameRoom from "./hooks/useGameRoom";
-import {
-  formatTime,
-  getAccuracy,
-  getCompletionTime,
-  getElapsedTime,
-  handleCopyText,
-} from "./lib/game";
+import { formatTime, getAccuracy, getCompletionTime, getWPM } from "./lib/game";
 
-import { Copy } from "lucide-react";
+import { CheckCheck, Copy } from "lucide-react";
+import PlayerTimer from "./components/PlayerTimer";
 
 export function TypingDuelGame() {
   const [roomId, setRoomId] = useState<Id<"gameRooms"> | null>(null);
 
-  const [currentTime, setCurrentTime] = useState(Date.now());
   const inputRef = useRef<HTMLInputElement>(null);
 
   const updateProgress = useMutation(api.gameRooms.updateProgress);
   const prevReadyStatesRef = useRef<Record<string, boolean>>({});
   const prevGameStateRef = useRef<string>("");
-  const updatePlayerScore = useMutation(api.score.updatePlayerScore);
+  const updatePlayerScore = useMutation(api.leaderboard.updatePlayerScore);
+  const [copiedText, setCopiedText] = useState("");
 
   useLeaveRoomOnExit(roomId);
 
@@ -75,7 +70,19 @@ export function TypingDuelGame() {
     }
 
     setInputText(value);
-    await updateProgress({ roomId, progress: value });
+
+    const liveWpm = getWPM(
+      value, // <-- use the new text
+      currentPlayer?.startTime as number, // startTime comes from roomState.currentPlayer
+      Date.now() // current moment so it's a live WPM
+    );
+
+    await updateProgress({
+      roomId,
+      progress: value,
+      phrase: roomState.room.currentPhrase,
+      wpm: liveWpm,
+    });
   };
 
   // Focus input when game starts
@@ -90,59 +97,48 @@ export function TypingDuelGame() {
     if (roomState?.room?.gameState === "waiting") {
       setInputText("");
     }
-  }, [roomState?.room?.gameState]);
+  }, [roomState?.room?.gameState, setInputText]);
 
-  // Update current time every 100ms for real-time timer display
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setCurrentTime(Date.now());
-    }, 100);
-    return () => clearInterval(interval);
-  }, []);
-
+  /// Replace the existing useEffect with this modified version
   useEffect(() => {
     if (!roomState?.room) return;
 
-    if (
-      prevGameStateRef.current === "playing" &&
-      roomState.room.gameState === "finished"
-    ) {
-      const winner = roomState.room.winner;
+    const { gameState, winner } = roomState.room;
 
-      if (winner) {
-        // Winner gets +10
-        updatePlayerScore({
-          playerId: winner,
-          outcome: "win",
-        }).catch(() => toast.error("Failed to update score"));
+    if (prevGameStateRef.current === "playing" && gameState === "finished") {
+      if (winner && currentPlayer?.userId === winner) {
+        // Only the winner updates the scores to prevent duplicate calls
+        updatePlayerScore({ playerId: winner, outcome: "win" }).catch(() =>
+          toast.error("Failed to update score")
+        );
 
-        // Loser gets −5
-        const loser =
-          roomState.players.find((p) => p.userId !== winner) || null;
+        const loser = roomState.players.find((p) => p.userId !== winner);
         if (loser) {
-          updatePlayerScore({
-            playerId: loser.userId,
-            outcome: "lose",
-          }).catch(() => toast.error("Failed to update score"));
+          updatePlayerScore({ playerId: loser.userId, outcome: "lose" }).catch(
+            () => toast.error("Failed to update score")
+          );
         }
-      }
-
-      // Play sounds
-      if (winner === currentPlayer?.userId) {
-        new Audio("/win.mp3").play().catch(() => {});
-      } else {
-        new Audio("/lose.mp3").play().catch(() => {});
       }
     }
 
-    prevGameStateRef.current = roomState.room.gameState;
+    prevGameStateRef.current = gameState;
   }, [
     roomId,
+    roomState?.players,
     roomState?.room,
-    roomState?.room?.gameState,
-    roomState?.room?.winner,
+    roomState?.room.gameState,
+    roomState?.room.winner,
     updatePlayerScore,
+    roomState?.currentPlayer?.userId, // Add this dependency
   ]);
+
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      setCopiedText("");
+    }, 2000);
+
+    return () => clearTimeout(timeout);
+  }, [copiedText]);
 
   if (!roomId) {
     return <CreateOrJoinRoom setRoomId={setRoomId} />;
@@ -164,6 +160,18 @@ export function TypingDuelGame() {
     return Math.min((progress.length / phrase.length) * 100, 100);
   };
 
+  const handleCopyText = (text: string) => {
+    navigator.clipboard.writeText(text).then(
+      () => {
+        toast.success("Text copied to clipboard!");
+        setCopiedText(text);
+      },
+      () => toast.error("Failed to copy text.")
+    );
+  };
+
+  console.log("players", roomState);
+
   return (
     <div className="space-y-6">
       {/* Room Info */}
@@ -175,7 +183,11 @@ export function TypingDuelGame() {
               className="bg-gray-100 p-2 rounded"
               onClick={() => handleCopyText(room.roomCode)}
             >
-              <Copy className="size-4 shrink-0" />{" "}
+              {copiedText === room.roomCode ? (
+                <CheckCheck className="size-4 shrink-0 text-green-500" />
+              ) : (
+                <Copy className="size-4 shrink-0" />
+              )}{" "}
             </button>
           </div>
           <div className="text-sm text-gray-500">
@@ -228,38 +240,22 @@ export function TypingDuelGame() {
                       }}
                     ></div>
                   </div>
+
                   <div className="text-xs text-gray-600 mt-1 space-y-1">
                     <div>
                       {player.progress.length}/{room.currentPhrase.length} chars
                       {player.progress && (
-                        <span className="ml-2">
+                        <span className="text-sm">
                           Accuracy:{" "}
                           {getAccuracy(player.progress, room.currentPhrase)}%
                         </span>
                       )}
                     </div>
                     <div className="font-mono text-blue-600">
-                      {player.completionTime ? (
-                        <span className="font-semibold">
-                          ✓{" "}
-                          {formatTime(
-                            getCompletionTime(
-                              player.startTime,
-                              player.completionTime
-                            )
-                          )}
-                        </span>
-                      ) : (
-                        <span>
-                          ⏱️{" "}
-                          {formatTime(
-                            getElapsedTime(
-                              player.startTime as number,
-                              currentTime
-                            )
-                          )}
-                        </span>
-                      )}
+                      <PlayerTimer
+                        startTime={player?.startTime as number}
+                        completionTime={player?.completionTime as number}
+                      />
                     </div>
                   </div>
                 </div>
@@ -273,6 +269,27 @@ export function TypingDuelGame() {
                     )}
                   </div>
                 </div>
+              )}
+
+              {player.progress && (
+                <>
+                  <span className="text-sm">
+                    Accuracy:{" "}
+                    {getAccuracy(
+                      player.progress,
+                      room?.currentPhrase as string
+                    )}
+                    %
+                  </span>
+                  <span className="ml-4 text-sm">
+                    WPM:{" "}
+                    {getWPM(
+                      player.progress,
+                      player.startTime as number,
+                      player.completionTime
+                    )}
+                  </span>
+                </>
               )}
             </div>
           ))}

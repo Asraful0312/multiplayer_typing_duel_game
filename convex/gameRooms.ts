@@ -2,6 +2,15 @@ import { v } from "convex/values";
 import { query, mutation, action } from "./_generated/server";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { api } from "./_generated/api";
+import { getAccuracy, getWPM } from "./../src/lib/game";
+import {
+  customCtx,
+  customMutation,
+} from "convex-helpers/server/customFunctions";
+import { TableAggregate } from "@convex-dev/aggregate";
+import { components } from "./_generated/api";
+import { DataModel } from "./_generated/dataModel";
+import { Triggers } from "convex-helpers/server/triggers";
 
 const PHRASES = [
   "The quick brown fox jumps over the lazy dog",
@@ -15,6 +24,51 @@ const PHRASES = [
   "Jackdaws love my big sphinx of quartz",
   "Mr. Jock, TV quiz PhD., bags few lynx",
 ];
+
+export const aggregateByScore = new TableAggregate<{
+  Key: number;
+  DataModel: DataModel;
+  TableName: "leaderboard";
+}>(components.aggregateByScore, {
+  sortKey: (leaderboardTableDoc) => -(leaderboardTableDoc?.score ?? 0),
+});
+
+const triggers = new Triggers<DataModel>();
+triggers.register("leaderboard", aggregateByScore.trigger());
+
+export const pageOfScores = query({
+  args: {
+    offset: v.number(),
+    numItems: v.number(),
+  },
+  handler: async (ctx, { offset, numItems }) => {
+    const firstInPage = await aggregateByScore.at(ctx, offset);
+
+    console.log("1 pase", firstInPage);
+
+    const page = await aggregateByScore.paginate(ctx, {
+      bounds: {
+        lower: {
+          key: firstInPage.key,
+          id: firstInPage.id,
+          inclusive: true,
+        },
+      },
+      pageSize: numItems,
+    });
+
+    const scores = await Promise.all(
+      page.page.map((doc) => ctx.db.get(doc.id))
+    );
+
+    return scores.filter((d) => d != null);
+  },
+});
+
+const mutationWithTriggers = customMutation(
+  mutation,
+  customCtx(triggers.wrapDB)
+);
 
 export const getGameHistory = query({
   args: { roomId: v.id("gameRooms") },
@@ -202,18 +256,18 @@ export const toggleReady = mutation({
   },
 });
 
-export const updateProgress = mutation({
+export const updateProgress = mutationWithTriggers({
   args: {
     roomId: v.id("gameRooms"),
     progress: v.string(),
+    phrase: v.optional(v.string()),
+    wpm: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const userId = await requireAuth(ctx);
 
     const room = await ctx.db.get(args.roomId);
-    if (!room || room.gameState !== "playing") {
-      return;
-    }
+    if (!room || room.gameState !== "playing") return;
 
     const player = await ctx.db
       .query("players")
@@ -222,31 +276,48 @@ export const updateProgress = mutation({
       )
       .unique();
 
-    if (!player) {
-      throw new Error("Player not found in room");
-    }
+    if (!player) throw new Error("Player not found in room");
 
+    // Update current player's progress, wpm, accuracy
     await ctx.db.patch(player._id, {
       progress: args.progress,
+      accuracy: getAccuracy(args.progress, args.phrase as string),
+      wpm: args.wpm,
     });
 
-    // Check if player completed the phrase
+    // Check if current player completed the phrase
     if (room.currentPhrase && args.progress === room.currentPhrase) {
       const completionTime = Date.now();
 
-      // Update player's completion time
-      await ctx.db.patch(player._id, {
-        completionTime,
-      });
+      // Winner's completion time
+      await ctx.db.patch(player._id, { completionTime });
 
-      // Mark game as finished and set winner
+      // Find the loser
+      const otherPlayers = await ctx.db
+        .query("players")
+        .withIndex("by_room", (q) => q.eq("roomId", args.roomId))
+        .collect();
+
+      const loser = otherPlayers.find((p) => p.userId !== userId);
+      if (loser) {
+        await ctx.db.patch(loser._id, {
+          wpm:
+            loser.wpm ??
+            getWPM(loser.progress, loser.startTime as number, Date.now()),
+          accuracy:
+            loser.accuracy ?? getAccuracy(loser.progress, room.currentPhrase),
+          completionTime: loser.completionTime ?? Date.now(),
+        });
+      }
+
+      // Mark room finished & winner
       await ctx.db.patch(args.roomId, {
         gameState: "finished",
         winner: userId,
       });
 
-      // Insert game history record
-      const players = await ctx.db
+      // Save game history with both winner & loser data
+      const updatedPlayers = await ctx.db
         .query("players")
         .withIndex("by_room", (q) => q.eq("roomId", args.roomId))
         .collect();
@@ -255,7 +326,7 @@ export const updateProgress = mutation({
         roomId: args.roomId,
         endedAt: completionTime,
         winnerId: userId,
-        players: players.map((p) => ({
+        players: updatedPlayers.map((p) => ({
           userId: p.userId,
           name: p.name,
           wpm: p.wpm,
@@ -267,7 +338,7 @@ export const updateProgress = mutation({
   },
 });
 
-export const startNewRound = mutation({
+export const startNewRound = mutationWithTriggers({
   args: { roomId: v.id("gameRooms") },
   handler: async (ctx, args) => {
     const room = await ctx.db.get(args.roomId);
@@ -301,7 +372,7 @@ export const startNewRound = mutation({
   },
 });
 
-export const leaveRoom = mutation({
+export const leaveRoom = mutationWithTriggers({
   args: { roomId: v.id("gameRooms") },
   handler: async (ctx, { roomId }) => {
     const userId = await requireAuth(ctx);
@@ -348,5 +419,40 @@ export const leaveRoom = mutation({
 
     // Finally delete the room itself
     await ctx.db.delete(roomId);
+  },
+});
+
+export const completeGame = mutation({
+  args: { roomId: v.id("gameRooms") },
+  handler: async (ctx, { roomId }) => {
+    const room = await ctx.db.get(roomId);
+    if (!room || room.gameState !== "playing") return;
+
+    // Mark game as finished and set winner (if not already set)
+    await ctx.db.patch(roomId, {
+      gameState: "finished",
+      // Add any other completion logic here
+    });
+
+    // Update scores if there's a winner
+    if (room.winner) {
+      await ctx.scheduler.runAfter(0, api.leaderboard.updatePlayerScore, {
+        playerId: room.winner,
+        outcome: "win",
+      });
+
+      const players = await ctx.db
+        .query("players")
+        .withIndex("by_room", (q) => q.eq("roomId", roomId))
+        .collect();
+
+      const loser = players.find((p) => p.userId !== room.winner);
+      if (loser) {
+        await ctx.scheduler.runAfter(0, api.leaderboard.updatePlayerScore, {
+          playerId: loser.userId,
+          outcome: "lose",
+        });
+      }
+    }
   },
 });
