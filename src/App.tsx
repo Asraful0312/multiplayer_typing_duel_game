@@ -1,4 +1,3 @@
-import React from "react";
 import { Route, Routes } from "react-router-dom";
 import Home from "./pages/Home";
 import Inventory from "./pages/Inventory";
@@ -7,6 +6,8 @@ import Store from "./pages/Store";
 import Leaderboard from "./pages/Leaderboard";
 import { makeUseQueryWithStatus } from "convex-helpers/react";
 import { useQueries } from "convex/react";
+import { Toaster } from "sonner";
+import RoomPage from "./pages/RoomPage";
 // Do this once somewhere, name it whatever you want.
 export const useQueryWithStatus = makeUseQueryWithStatus(useQueries);
 
@@ -16,10 +17,12 @@ const App = () => {
       <Header />
       <Routes>
         <Route path="/" element={<Home />} />
+        <Route path="/room/:roomId" element={<RoomPage />} />
         <Route path="/inventory" element={<Inventory />} />
         <Route path="/store" element={<Store />} />
         <Route path="/leaderboard" element={<Leaderboard />} />
       </Routes>
+      <Toaster />
     </>
   );
 };

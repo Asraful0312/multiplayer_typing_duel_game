@@ -13,6 +13,7 @@ import type * as chat from "../chat.js";
 import type * as gameRooms from "../gameRooms.js";
 import type * as http from "../http.js";
 import type * as leaderboard from "../leaderboard.js";
+import type * as players from "../players.js";
 import type * as router from "../router.js";
 import type * as store from "../store.js";
 
@@ -36,6 +37,7 @@ declare const fullApi: ApiFromModules<{
   gameRooms: typeof gameRooms;
   http: typeof http;
   leaderboard: typeof leaderboard;
+  players: typeof players;
   router: typeof router;
   store: typeof store;
 }>;

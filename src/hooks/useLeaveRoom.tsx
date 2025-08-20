@@ -7,6 +7,8 @@ import { api } from "../../convex/_generated/api";
 export default function useLeaveRoomOnExit(roomId?: Id<"gameRooms"> | null) {
   const leaveRoom = useMutation(api.gameRooms.leaveRoom); // adjust import path
 
+  console.log("leave");
+
   useEffect(() => {
     if (!roomId) return;
 

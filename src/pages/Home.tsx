@@ -1,5 +1,4 @@
 import { Authenticated, Unauthenticated, useQuery } from "convex/react";
-import { Toaster } from "sonner";
 import { api } from "../../convex/_generated/api";
 import { TypingDuelGame } from "@/TypingDuelGame";
 import { SignInForm } from "@/SignInForm";
@@ -12,7 +11,6 @@ export default function Home() {
           <Content />
         </div>
       </main>
-      <Toaster />
     </div>
   );
 }
@@ -23,7 +21,7 @@ function Content() {
   if (loggedInUser === undefined) {
     return (
       <div className="flex justify-center items-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
       </div>
     );
   }

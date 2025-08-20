@@ -43,9 +43,6 @@ export const pageOfScores = query({
   },
   handler: async (ctx, { offset, numItems }) => {
     const firstInPage = await aggregateByScore.at(ctx, offset);
-
-    console.log("1 pase", firstInPage);
-
     const page = await aggregateByScore.paginate(ctx, {
       bounds: {
         lower: {
@@ -70,25 +67,6 @@ const mutationWithTriggers = customMutation(
   customCtx(triggers.wrapDB)
 );
 
-export const getGameHistory = query({
-  args: { roomId: v.id("gameRooms") },
-  handler: async ({ db }, { roomId }) => {
-    return await db
-      .query("gameHistory")
-      .withIndex("by_room", (q) => q.eq("roomId", roomId))
-      .collect();
-  },
-});
-
-export const gameHistory = action({
-  args: { roomId: v.id("gameRooms") },
-  handler: async (ctx, args): Promise<any> => {
-    return await ctx.runQuery(api.gameRooms.getGameHistory, {
-      roomId: args.roomId,
-    });
-  },
-});
-
 async function requireAuth(ctx: any) {
   const userId = await getAuthUserId(ctx);
   if (!userId) {
@@ -97,9 +75,13 @@ async function requireAuth(ctx: any) {
   return userId;
 }
 
+// Create room with public/private option
 export const createRoom = mutation({
-  args: {},
-  handler: async (ctx) => {
+  args: {
+    roomType: v.union(v.literal("public"), v.literal("private")),
+    roomName: v.optional(v.string()), // Required for public rooms
+  },
+  handler: async (ctx, args) => {
     const userId = await requireAuth(ctx);
     const user = await ctx.db.get(userId);
     if (!user) {
@@ -111,8 +93,12 @@ export const createRoom = mutation({
 
     const roomId = await ctx.db.insert("gameRooms", {
       roomCode,
+      roomType: args.roomType,
+      roomName: args.roomName,
+      hostId: userId,
       gameState: "waiting",
       createdAt: Date.now(),
+      isActive: true,
     });
 
     await ctx.db.insert("players", {
@@ -121,12 +107,171 @@ export const createRoom = mutation({
       name: user.name || user.email || "Anonymous",
       progress: "",
       isReady: false,
+      isHost: true,
     });
 
     return { roomId, roomCode };
   },
 });
 
+// Get list of public rooms
+export const getPublicRooms = query({
+  args: {},
+  handler: async (ctx) => {
+    const publicRooms = await ctx.db
+      .query("gameRooms")
+      .withIndex("by_room_type", (q) => q.eq("roomType", "public"))
+      .filter((q) => q.eq(q.field("isActive"), true))
+      .collect();
+
+    // Get player counts for each room
+    const roomsWithPlayerCounts = await Promise.all(
+      publicRooms.map(async (room) => {
+        const players = await ctx.db
+          .query("players")
+          .withIndex("by_room", (q) => q.eq("roomId", room._id))
+          .collect();
+
+        if (!room.hostId) {
+          throw new Error("Host not found");
+        }
+
+        const host = await ctx.db.get(room.hostId);
+
+        return {
+          ...room,
+          playerCount: players.length,
+          hostName: host?.name || host?.email || "Anonymous",
+        };
+      })
+    );
+
+    return roomsWithPlayerCounts.filter((room) => room.playerCount < 2);
+  },
+});
+
+// Request to join a public room
+export const requestToJoinRoom = mutation({
+  args: { roomId: v.id("gameRooms") },
+  handler: async (ctx, args) => {
+    const userId = await requireAuth(ctx);
+    const user = await ctx.db.get(userId);
+    if (!user) {
+      throw new Error("User not found");
+    }
+
+    const room = await ctx.db.get(args.roomId);
+    if (!room || room.roomType !== "public") {
+      throw new Error("Room not found or not public");
+    }
+
+    // Check if already requested
+    const existingRequest = await ctx.db
+      .query("joinRequests")
+      .withIndex("by_room", (q) => q.eq("roomId", args.roomId))
+      .filter((q) => q.eq(q.field("requesterId"), userId))
+      .filter((q) => q.eq(q.field("status"), "pending"))
+      .unique();
+
+    if (existingRequest) {
+      throw new Error("Join request already pending");
+    }
+
+    // Check if already in room
+    const existingPlayer = await ctx.db
+      .query("players")
+      .withIndex("by_user_and_room", (q) =>
+        q.eq("userId", userId).eq("roomId", args.roomId)
+      )
+      .unique();
+
+    if (existingPlayer) {
+      throw new Error("Already in this room");
+    }
+
+    await ctx.db.insert("joinRequests", {
+      roomId: args.roomId,
+      requesterId: userId,
+      requesterName: user.name || user.email || "Anonymous",
+      status: "pending",
+      createdAt: Date.now(),
+    });
+
+    return { success: true };
+  },
+});
+
+// Get join requests for a room (host only)
+export const getJoinRequests = query({
+  args: { roomId: v.id("gameRooms") },
+  handler: async (ctx, args) => {
+    const userId = await requireAuth(ctx);
+
+    const room = await ctx.db.get(args.roomId);
+    if (!room || room.hostId !== userId) {
+      throw new Error("Not authorized to view join requests");
+    }
+
+    return await ctx.db
+      .query("joinRequests")
+      .withIndex("by_room_and_status", (q) =>
+        q.eq("roomId", args.roomId).eq("status", "pending")
+      )
+      .collect();
+  },
+});
+
+// Accept/reject join request (host only)
+export const handleJoinRequest = mutation({
+  args: {
+    requestId: v.id("joinRequests"),
+    action: v.union(v.literal("accept"), v.literal("reject")),
+  },
+  handler: async (ctx, args) => {
+    const userId = await requireAuth(ctx);
+
+    const request = await ctx.db.get(args.requestId);
+    if (!request) {
+      throw new Error("Join request not found");
+    }
+
+    const room = await ctx.db.get(request.roomId);
+    if (!room || room.hostId !== userId) {
+      throw new Error("Not authorized to handle this request");
+    }
+
+    if (args.action === "accept") {
+      // Check if room is still available
+      const players = await ctx.db
+        .query("players")
+        .withIndex("by_room", (q) => q.eq("roomId", request.roomId))
+        .collect();
+
+      if (players.length >= 2) {
+        throw new Error("Room is now full");
+      }
+
+      // Add player to room
+      await ctx.db.insert("players", {
+        roomId: request.roomId,
+        userId: request.requesterId,
+        name: request.requesterName,
+        progress: "",
+        isReady: false,
+        isHost: false,
+      });
+    }
+
+    // Update request status
+    await ctx.db.patch(args.requestId, {
+      status: args.action === "accept" ? "accepted" : "rejected",
+    });
+
+    return { success: true, roomId: request.roomId };
+  },
+});
+
+// Modified joinRoom for private rooms
 export const joinRoom = mutation({
   args: { roomCode: v.string() },
   handler: async (ctx, args) => {
@@ -143,6 +288,13 @@ export const joinRoom = mutation({
 
     if (!room) {
       throw new Error("Room not found");
+    }
+
+    // Only allow direct joining for private rooms
+    if (room.roomType === "public") {
+      throw new Error(
+        "Cannot join public room directly. Please request to join."
+      );
     }
 
     // Check if user is already in the room
@@ -173,12 +325,60 @@ export const joinRoom = mutation({
       name: user.name || user.email || "Anonymous",
       progress: "",
       isReady: false,
+      isHost: false,
     });
 
     return { roomId: room._id, roomCode: room.roomCode };
   },
 });
 
+// Get user's join request status for a specific room
+export const getUserJoinRequestStatus = query({
+  args: { roomId: v.id("gameRooms") },
+  handler: async (ctx, args) => {
+    const userId = await requireAuth(ctx);
+
+    const joinRequest = await ctx.db
+      .query("joinRequests")
+      .withIndex("by_room", (q) => q.eq("roomId", args.roomId))
+      .filter((q) => q.eq(q.field("requesterId"), userId))
+      .order("desc") // Get the most recent request
+      .first();
+
+    if (!joinRequest) {
+      return null;
+    }
+
+    return {
+      _id: joinRequest._id,
+      status: joinRequest.status,
+      createdAt: joinRequest.createdAt,
+    };
+  },
+});
+
+export const getUserJoinRequests = query({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await requireAuth(ctx);
+
+    const joinRequests = await ctx.db
+      .query("joinRequests")
+      .withIndex("by_requester", (q) => q.eq("requesterId", userId))
+      .order("desc")
+      .collect();
+
+    return joinRequests.map((request) => ({
+      _id: request._id,
+      roomId: request.roomId,
+      status: request.status,
+      createdAt: request.createdAt,
+      redirected: request.redirected || false,
+    }));
+  },
+});
+
+// Rest of your existing functions remain the same...
 export const getRoomState = query({
   args: { roomId: v.id("gameRooms") },
   handler: async (ctx, args) => {
@@ -196,12 +396,35 @@ export const getRoomState = query({
 
     const currentPlayer = players.find((p) => p.userId === userId);
 
+    // Get join requests if user is host
+    let joinRequests: any = [];
+    if (room.hostId === userId && room.roomType === "public") {
+      joinRequests = await ctx.db
+        .query("joinRequests")
+        .withIndex("by_room_and_status", (q) =>
+          q.eq("roomId", args.roomId).eq("status", "pending")
+        )
+        .collect();
+    }
+
     return {
       room,
       players,
       currentPlayer,
+      joinRequests,
       isCurrentUserInRoom: !!currentPlayer,
+      isHost: currentPlayer?.isHost || false,
     };
+  },
+});
+
+export const getRoom = query({
+  args: {
+    roomId: v.id("gameRooms"),
+  },
+  handler: async (ctx, args) => {
+    const room = await ctx.db.get(args.roomId);
+    return room;
   },
 });
 
@@ -372,53 +595,69 @@ export const startNewRound = mutationWithTriggers({
   },
 });
 
-export const leaveRoom = mutationWithTriggers({
+export const leaveRoom = mutation({
   args: { roomId: v.id("gameRooms") },
-  handler: async (ctx, { roomId }) => {
+  handler: async (ctx, args) => {
     const userId = await requireAuth(ctx);
-
-    // 1) Find and delete the player's row (if exists)
+    // Find the player in the room
     const player = await ctx.db
       .query("players")
       .withIndex("by_user_and_room", (q) =>
-        q.eq("userId", userId).eq("roomId", roomId)
+        q.eq("userId", userId).eq("roomId", args.roomId)
       )
       .unique();
-
-    if (player) {
-      await ctx.db.delete(player._id);
-    }
-
-    // 2) Check remaining players in room (use index)
-    const remainingPlayers = await ctx.db
-      .query("players")
-      .withIndex("by_room", (q) => q.eq("roomId", roomId))
-      .collect();
-
-    if (remainingPlayers.length > 0) {
-      // other players still present -> do not clean up room
+    if (!player) {
+      // Already left?
       return;
     }
-
-    // 3) No players left -> delete chats, history, and the room
-    const chats = await ctx.db
-      .query("gameChats")
-      .withIndex("by_room", (q) => q.eq("roomId", roomId))
+    // Remove the player
+    await ctx.db.delete(player._id);
+    // Check if the room is now empty -> delete the room?
+    const players = await ctx.db
+      .query("players")
+      .withIndex("by_room", (q) => q.eq("roomId", args.roomId))
       .collect();
-    for (const c of chats) {
-      await ctx.db.delete(c._id);
+    if (players.length === 0) {
+      // Also delete any join requests for this room?
+      const requests = await ctx.db
+        .query("joinRequests")
+        .withIndex("by_room", (q) => q.eq("roomId", args.roomId))
+        .collect();
+      await Promise.all(requests.map((req) => ctx.db.delete(req._id)));
+      await ctx.db.delete(args.roomId);
+    } else {
+      // If the leaving player was the host, assign a new host?
+      if (player.isHost) {
+        const remainingPlayers = await ctx.db
+          .query("players")
+          .withIndex("by_room", (q) => q.eq("roomId", args.roomId))
+          .collect();
+        if (remainingPlayers.length > 0) {
+          // Assign the first remaining player as the new host
+          const newHost = remainingPlayers[0];
+          await ctx.db.patch(newHost._id, { isHost: true });
+        }
+      }
     }
+  },
+});
 
-    const history = await ctx.db
+export const getGameHistory = query({
+  args: { roomId: v.id("gameRooms") },
+  handler: async ({ db }, { roomId }) => {
+    return await db
       .query("gameHistory")
       .withIndex("by_room", (q) => q.eq("roomId", roomId))
       .collect();
-    for (const h of history) {
-      await ctx.db.delete(h._id);
-    }
+  },
+});
 
-    // Finally delete the room itself
-    await ctx.db.delete(roomId);
+export const gameHistory = action({
+  args: { roomId: v.id("gameRooms") },
+  handler: async (ctx, args): Promise<any> => {
+    return await ctx.runQuery(api.gameRooms.getGameHistory, {
+      roomId: args.roomId,
+    });
   },
 });
 

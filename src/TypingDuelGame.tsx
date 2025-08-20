@@ -8,15 +8,17 @@ import { GameHistory } from "./GameHistory";
 import { EmojiStickerSender } from "./EmojiStickerSender";
 import useLeaveRoomOnExit from "./hooks/useLeaveRoom";
 import CreateOrJoinRoom from "./components/CreateOrJoinRoom";
+import JoinRequests from "./components/JoinRequests";
 import useGameRoom from "./hooks/useGameRoom";
 import { formatTime, getAccuracy, getCompletionTime, getWPM } from "./lib/game";
 
-import { CheckCheck, Copy } from "lucide-react";
+import { CheckCheck, Copy, Crown, Users } from "lucide-react";
 import PlayerTimer from "./components/PlayerTimer";
+import { Button } from "./components/ui/button";
+import { Badge } from "./components/ui/badge";
+import { useNavigate } from "react-router-dom";
 
-export function TypingDuelGame() {
-  const [roomId, setRoomId] = useState<Id<"gameRooms"> | null>(null);
-
+export function TypingDuelGame({ roomId }: { roomId: Id<"gameRooms"> }) {
   const inputRef = useRef<HTMLInputElement>(null);
 
   const updateProgress = useMutation(api.gameRooms.updateProgress);
@@ -24,6 +26,8 @@ export function TypingDuelGame() {
   const prevGameStateRef = useRef<string>("");
   const updatePlayerScore = useMutation(api.leaderboard.updatePlayerScore);
   const [copiedText, setCopiedText] = useState("");
+  const leaveRoom = useMutation(api.gameRooms.leaveRoom);
+  const navigate = useNavigate();
 
   useLeaveRoomOnExit(roomId);
 
@@ -33,7 +37,7 @@ export function TypingDuelGame() {
   );
 
   const { handleStartNewRound, handleToggleReady, inputText, setInputText } =
-    useGameRoom(roomId!);
+    useGameRoom(roomId);
 
   //play ready sound
   useEffect(() => {
@@ -141,19 +145,18 @@ export function TypingDuelGame() {
   }, [copiedText]);
 
   if (!roomId) {
-    return <CreateOrJoinRoom setRoomId={setRoomId} />;
+    return <CreateOrJoinRoom />;
   }
 
   if (!roomState) {
     return (
       <div className="flex justify-center items-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
       </div>
     );
   }
 
-  const { room, players, currentPlayer } = roomState;
-  // const otherPlayer = players.find((p) => p.userId !== currentPlayer?.userId);
+  const { room, players, currentPlayer, joinRequests, isHost } = roomState;
 
   const getProgressPercentage = (progress: string, phrase: string) => {
     if (!phrase) return 0;
@@ -170,15 +173,47 @@ export function TypingDuelGame() {
     );
   };
 
-  console.log("players", roomState);
+  // TypingDuelGame.tsx
+  const handleLeaveRoom = async () => {
+    try {
+      await leaveRoom({ roomId });
+      await navigate("/", { state: { fromLeave: true } });
+      toast.success("You've left the room");
+    } catch (error) {
+      toast.error("Failed to leave room");
+    }
+  };
 
   return (
     <div className="space-y-6">
+      {/* Join Requests (for hosts of public rooms) */}
+      {isHost &&
+        room.roomType === "public" &&
+        joinRequests &&
+        joinRequests.length > 0 && (
+          <JoinRequests joinRequests={joinRequests} roomCode={room.roomCode} />
+        )}
+
+      <Button onClick={handleLeaveRoom} variant="destructive">
+        Leave Room
+      </Button>
       {/* Room Info */}
+
       <div className="bg-white rounded-lg shadow-lg p-6">
         <div className="flex justify-between items-center mb-4">
           <div className="flex items-center gap-4">
-            <h2 className="text-2xl font-bold">Room: {room.roomCode}</h2>
+            <div className="flex items-center gap-2">
+              <h2 className="text-2xl font-bold">
+                {room.roomType === "public" && room.roomName
+                  ? room.roomName
+                  : `Room: ${room.roomCode}`}
+              </h2>
+              <Badge
+                variant={room.roomType === "public" ? "default" : "secondary"}
+              >
+                {room.roomType}
+              </Badge>
+            </div>
             <button
               className="bg-gray-100 p-2 rounded"
               onClick={() => handleCopyText(room.roomCode)}
@@ -187,11 +222,17 @@ export function TypingDuelGame() {
                 <CheckCheck className="size-4 shrink-0 text-green-500" />
               ) : (
                 <Copy className="size-4 shrink-0" />
-              )}{" "}
+              )}
             </button>
           </div>
-          <div className="text-sm text-gray-500">
-            Players: {players.length}/2
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-1 text-sm text-gray-500">
+              <Users className="size-4" />
+              <span>Players: {players.length}/2</span>
+            </div>
+            {room.roomType === "public" && room.roomName && (
+              <div className="text-sm text-gray-500">Code: {room.roomCode}</div>
+            )}
           </div>
         </div>
 
@@ -200,25 +241,38 @@ export function TypingDuelGame() {
           {players.map((player) => (
             <div
               key={player._id}
-              className={`bg-gray-50 rounded-lg p-4 ${player._id === currentPlayer?._id ? "border-primary/80" : "border-red-400"}`}
+              className={`bg-gray-50 rounded-lg p-4 ${
+                player._id === currentPlayer?._id
+                  ? "border-primary/80"
+                  : "border-red-400"
+              }`}
             >
               <div className="flex justify-between items-center">
                 <div className="flex items-center gap-2">
                   <div
-                    className={`size-3 rounded-full ${player._id === currentPlayer?._id ? "bg-primary" : "bg-red-500"}`}
+                    className={`size-3 rounded-full ${
+                      player._id === currentPlayer?._id
+                        ? "bg-primary"
+                        : "bg-red-500"
+                    }`}
                   />
-                  <p className="font-semibold">
-                    {player._id === currentPlayer?._id ? (
-                      <p className="flex items-center gap-2">
-                        {player.name}{" "}
-                        <p className="text-sm font-normal bg-gray-100 rounded py-0.5 px-3">
-                          You
-                        </p>
-                      </p>
-                    ) : (
-                      player.name
+                  <div className="flex items-center gap-2">
+                    <p className="font-semibold">
+                      {player._id === currentPlayer?._id ? (
+                        <div className="flex items-center gap-2">
+                          {player.name}
+                          <Badge variant="outline" className="text-xs">
+                            You
+                          </Badge>
+                        </div>
+                      ) : (
+                        player.name
+                      )}
+                    </p>
+                    {player.isHost && (
+                      <Crown className="h-4 w-4 text-yellow-500" />
                     )}
-                  </p>
+                  </div>
                 </div>
                 <span
                   className={`px-2 py-1 rounded text-xs ${
@@ -234,7 +288,11 @@ export function TypingDuelGame() {
                 <div className="mt-2">
                   <div className="w-full bg-gray-200 rounded-full h-2">
                     <div
-                      className={` h-2 rounded-full transition-all duration-200 ${player._id === currentPlayer?._id ? "bg-blue-600" : "bg-red-600"}`}
+                      className={` h-2 rounded-full transition-all duration-200 ${
+                        player._id === currentPlayer?._id
+                          ? "bg-blue-600"
+                          : "bg-red-600"
+                      }`}
                       style={{
                         width: `${getProgressPercentage(player.progress, room.currentPhrase)}%`,
                       }}
@@ -245,7 +303,7 @@ export function TypingDuelGame() {
                     <div>
                       {player.progress.length}/{room.currentPhrase.length} chars
                       {player.progress && (
-                        <span className="text-sm">
+                        <span className="text-sm ml-2">
                           Accuracy:{" "}
                           {getAccuracy(player.progress, room.currentPhrase)}%
                         </span>
@@ -272,8 +330,8 @@ export function TypingDuelGame() {
               )}
 
               {player.progress && (
-                <>
-                  <span className="text-sm">
+                <div className="mt-2 text-sm text-gray-600">
+                  <span>
                     Accuracy:{" "}
                     {getAccuracy(
                       player.progress,
@@ -281,7 +339,7 @@ export function TypingDuelGame() {
                     )}
                     %
                   </span>
-                  <span className="ml-4 text-sm">
+                  <span className="ml-4">
                     WPM:{" "}
                     {getWPM(
                       player.progress,
@@ -289,7 +347,7 @@ export function TypingDuelGame() {
                       player.completionTime
                     )}
                   </span>
-                </>
+                </div>
               )}
             </div>
           ))}
@@ -297,7 +355,9 @@ export function TypingDuelGame() {
           {players.length < 2 && (
             <div className="bg-gray-50 rounded-lg p-4 border-2 border-dashed border-gray-300">
               <div className="text-center text-gray-500">
-                Waiting for another player...
+                {room.roomType === "public"
+                  ? "Waiting for join requests..."
+                  : "Waiting for another player..."}
               </div>
             </div>
           )}
@@ -308,23 +368,21 @@ export function TypingDuelGame() {
           <div className="text-center">
             {players.length < 2 ? (
               <p className="text-gray-600">
-                Waiting for another player to join...
+                {room.roomType === "public"
+                  ? "Waiting for players to request joining..."
+                  : "Waiting for another player to join..."}
               </p>
             ) : (
               <div className="space-y-4">
                 <p className="text-gray-600">
                   Both players joined! Get ready to duel.
                 </p>
-                <button
+                <Button
                   onClick={handleToggleReady}
-                  className={`px-6 py-3 rounded-lg font-semibold transition-colors ${
-                    currentPlayer?.isReady
-                      ? "bg-gray-500 text-white hover:bg-gray-600"
-                      : "bg-green-600 text-white hover:bg-green-700"
-                  }`}
+                  variant={currentPlayer?.isReady ? "secondary" : "default"}
                 >
                   {currentPlayer?.isReady ? "Cancel Ready" : "Ready to Duel!"}
-                </button>
+                </Button>
               </div>
             )}
           </div>
@@ -419,12 +477,7 @@ export function TypingDuelGame() {
                 ))}
             </div>
 
-            <button
-              onClick={handleStartNewRound}
-              className="bg-blue-600 text-white py-3 px-6 rounded-lg font-semibold hover:bg-blue-700 transition-colors"
-            >
-              Start New Round
-            </button>
+            <Button onClick={handleStartNewRound}>Start New Round</Button>
           </div>
         )}
       </div>
@@ -437,7 +490,14 @@ export function TypingDuelGame() {
       <div className="bg-white rounded-lg shadow-lg p-6">
         <h3 className="text-lg font-semibold mb-3">How to Play:</h3>
         <ol className="list-decimal list-inside space-y-2 text-gray-700">
-          <li>Create a room or join with a room code</li>
+          <li>Create a room (public or private) or join with a room code</li>
+          <li>
+            For public rooms: others can request to join, and you can
+            accept/reject
+          </li>
+          <li>
+            For private rooms: share the code with friends to join directly
+          </li>
           <li>Wait for another player to join</li>
           <li>Both players click "Ready to Duel!"</li>
           <li>Type the phrase as fast and accurately as possible</li>

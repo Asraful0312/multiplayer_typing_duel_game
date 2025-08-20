@@ -42,6 +42,9 @@ const applicationTables = {
 
   gameRooms: defineTable({
     roomCode: v.string(),
+    roomType: v.optional(v.union(v.literal("public"), v.literal("private"))), // NEW: room type
+    roomName: v.optional(v.string()), // NEW: display name for public rooms
+    hostId: v.optional(v.id("users")), // NEW: room host/creator
     currentPhrase: v.optional(v.string()),
     gameState: v.union(
       v.literal("waiting"),
@@ -51,7 +54,28 @@ const applicationTables = {
     ),
     winner: v.optional(v.id("users")),
     createdAt: v.number(),
-  }).index("by_room_code", ["roomCode"]),
+    isActive: v.optional(v.boolean()), // NEW: to hide/show public rooms
+  })
+    .index("by_room_code", ["roomCode"])
+    .index("by_room_type", ["roomType"]) // NEW: index for public rooms
+    .index("by_host", ["hostId"]), // NEW: index for host operations
+
+  // NEW: Join requests for public rooms
+  joinRequests: defineTable({
+    roomId: v.id("gameRooms"),
+    requesterId: v.id("users"),
+    requesterName: v.string(),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("accepted"),
+      v.literal("rejected")
+    ),
+    redirected: v.optional(v.boolean()), // Add this field
+    createdAt: v.number(),
+  })
+    .index("by_room", ["roomId"])
+    .index("by_requester", ["requesterId"])
+    .index("by_room_and_status", ["roomId", "status"]),
 
   players: defineTable({
     roomId: v.id("gameRooms"),
@@ -63,6 +87,7 @@ const applicationTables = {
     accuracy: v.optional(v.number()),
     startTime: v.optional(v.number()),
     completionTime: v.optional(v.number()),
+    isHost: v.optional(v.boolean()), // NEW: identify room host
   })
     .index("by_room", ["roomId"])
     .index("by_user_and_room", ["userId", "roomId"]),
