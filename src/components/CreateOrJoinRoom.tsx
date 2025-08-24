@@ -156,7 +156,7 @@ const CreateOrJoinRoom = () => {
                 </div>
                 <div className="flex items-center gap-1">
                   <Users className="h-4 w-4" />
-                  <span>{room.playerCount}/2</span>
+                  <span>{room.playerCount}/5</span>
                 </div>
                 <div className="flex items-center gap-1">
                   <Clock className="h-4 w-4" />
@@ -190,7 +190,7 @@ const CreateOrJoinRoom = () => {
     <div className="w-full max-w-lg mx-auto  sm:px-0 space-y-6">
       <div className="bg-white rounded-lg shadow-lg p-4 sm:p-6">
         <h2 className="text-xl sm:text-2xl font-bold text-center mb-6">
-          Join the Duel
+          Join the Battle Arena
         </h2>
 
         {/* Tab Navigation */}
@@ -223,7 +223,7 @@ const CreateOrJoinRoom = () => {
                 : "text-gray-600 hover:text-gray-900"
             }`}
           >
-            Public Rooms
+            Public Battles
           </button>
         </div>
 
@@ -251,7 +251,7 @@ const CreateOrJoinRoom = () => {
                   onClick={() => handleCreateRoom("public")}
                   className="w-full"
                 >
-                  Create Public Room
+                  Create Public Battle
                 </Button>
               </div>
             </div>
@@ -259,10 +259,11 @@ const CreateOrJoinRoom = () => {
               <p className="font-medium mb-1">Room Types:</p>
               <p>
                 <strong>Private:</strong> Share the code with friends to join
+                (2-5 players)
               </p>
               <p>
                 <strong>Public:</strong> Others can request to join from the
-                public list
+                public list (2-5 players)
               </p>
             </div>
           </div>
@@ -286,7 +287,11 @@ const CreateOrJoinRoom = () => {
               </Button>
             </div>
             <div className="text-sm text-gray-600 bg-gray-50 p-3 rounded-lg">
-              <p>Enter the 4-character room code to join a private room.</p>
+              <p>
+                Enter the 4-character room code to join a private room
+                instantly.
+              </p>
+              <p className="mt-1 font-medium">Up to 5 players can compete!</p>
             </div>
           </div>
         )}
@@ -295,8 +300,9 @@ const CreateOrJoinRoom = () => {
         {activeTab === "public" && (
           <div className="space-y-4">
             <div className="text-sm text-gray-600 mb-4">
-              Request to join public rooms. The host will need to approve your
-              request.
+              Request to join public battles. The host will need to approve your
+              request.{" "}
+              <span className="font-medium">Up to 5 players can battle!</span>
             </div>
 
             {publicRooms === undefined ? (
@@ -306,8 +312,10 @@ const CreateOrJoinRoom = () => {
             ) : publicRooms.length === 0 ? (
               <div className="text-center py-8 text-gray-500">
                 <Users className="mx-auto h-12 w-12 text-gray-300 mb-2" />
-                <p>No public rooms available</p>
-                <p className="text-sm">Create one to get started!</p>
+                <p>No public battles available</p>
+                <p className="text-sm">
+                  Create one to start a multiplayer battle!
+                </p>
               </div>
             ) : (
               <div className="space-y-3 max-h-64 overflow-y-auto">

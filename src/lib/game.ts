@@ -84,3 +84,12 @@ export const getPlayerStats = (user: any) => {
     winPercentage,
   };
 };
+
+export function maskEmail(email: string): string {
+  const [local, domain] = email.split("@");
+  if (!local) return email;
+
+  const visiblePart = local.slice(0, 2); // show first 2 chars
+  const maskedPart = "*".repeat(local.length - 2);
+  return `${visiblePart}${maskedPart}@${domain}`;
+}

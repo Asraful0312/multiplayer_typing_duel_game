@@ -1,9 +1,19 @@
 // convex/leaderboard.ts
-import { components } from "./_generated/api";
+import { maskEmail } from "../src/lib/game";
+import { api, components } from "./_generated/api";
 import { DataModel } from "./_generated/dataModel";
 import { query, mutation } from "./_generated/server";
 import { TableAggregate } from "@convex-dev/aggregate";
 import { v } from "convex/values";
+
+type UpdateResult = {
+  playerId: string;
+  outcome: "win" | "lose";
+  score: number;
+  wins?: number;
+  losses?: number;
+  totalGames?: number;
+};
 
 // Define the aggregate for user scores
 const userScoreAggregate = new TableAggregate<{
@@ -19,23 +29,47 @@ export const updatePlayerScore = mutation({
   args: {
     playerId: v.id("users"),
     outcome: v.string(), // "win" or "lose"
+    playerCount: v.optional(v.number()), // Total players in the game
+    placement: v.optional(v.number()), // Player's placement (1st, 2nd, etc.)
   },
-  handler: async (ctx, { playerId, outcome }) => {
+  handler: async (
+    ctx,
+    { playerId, outcome, playerCount = 2, placement = 1 }
+  ) => {
     const existing = await ctx.db.get(playerId);
 
-    // Calculate score change
+    // Calculate score change based on outcome and game size
     let scoreChange = 0;
-    if (outcome === "win") scoreChange = 10;
-    if (outcome === "lose") scoreChange = -5;
+    let coins = 0;
+
+    if (outcome === "win") {
+      // Winner gets more points in larger games
+      const baseWinPoints = 10;
+      const bonusForGameSize = Math.max(0, (playerCount - 2) * 2); // +2 points per extra player
+      scoreChange = baseWinPoints + bonusForGameSize;
+
+      // Winner gets more coins in larger games
+      const baseCoinReward = 20;
+      const bonusCoinReward = Math.max(0, (playerCount - 2) * 5); // +5 coins per extra player
+      coins = baseCoinReward + bonusCoinReward;
+    } else if (outcome === "lose") {
+      // Losers get penalty, but less harsh in larger games
+      const baseLosePenalty = -5;
+      // Reduce penalty in larger games (more competition = less harsh)
+      const penaltyReduction = Math.min(3, Math.max(0, (playerCount - 2) * 1));
+      scoreChange = baseLosePenalty + penaltyReduction;
+
+      // Losers get small participation reward in larger games
+      const participationCoins =
+        playerCount > 2 ? Math.min(5, playerCount - 2) : 0;
+      coins = participationCoins;
+    }
 
     // Calculate stat changes
     let winsChange = 0;
     let lossesChange = 0;
     if (outcome === "win") winsChange = 1;
     if (outcome === "lose") lossesChange = 1;
-
-    let coins = 0;
-    if (outcome === "win") coins = 20;
 
     if (existing) {
       const newScore = Math.max((existing?.score || 0) + scoreChange, 0);
@@ -72,12 +106,14 @@ export const updatePlayerScore = mutation({
       const finalScore = Math.max(scoreChange, 0);
       const initialWins = outcome === "win" ? 1 : 0;
       const initialLosses = outcome === "lose" ? 1 : 0;
+      const initialCoins = Math.max(coins, 0);
 
       await ctx.db.patch(playerId, {
         score: finalScore,
         wins: initialWins,
         losses: initialLosses,
         totalGames: 1,
+        coins: initialCoins,
       });
 
       // Get the updated document and insert into aggregate
@@ -86,6 +122,15 @@ export const updatePlayerScore = mutation({
         await userScoreAggregate.insert(ctx, updatedDoc);
       }
     }
+
+    return {
+      scoreChange,
+      coinsEarned: coins,
+      newScore: existing
+        ? Math.max((existing?.score || 0) + scoreChange, 0)
+        : Math.max(scoreChange, 0),
+      newCoins: existing ? (existing?.coins || 0) + coins : Math.max(coins, 0),
+    };
   },
 });
 
@@ -115,7 +160,7 @@ export const getLeaderboard = query({
         leaderboard.push({
           rank: i + 1,
           userId: user._id,
-          name: user.name || user.email || "Anonymous",
+          name: user.name || (user.email ? maskEmail(user.email) : "Anonymous"),
           image: user.image,
           score: user.score,
           wins: user.wins,
@@ -126,6 +171,57 @@ export const getLeaderboard = query({
     }
 
     return leaderboard;
+  },
+});
+
+// Helper function to update scores for all players after a multiplayer game
+export const updateMultiplayerGameScores = mutation({
+  args: {
+    winnerId: v.id("users"),
+    allPlayerIds: v.array(v.id("users")),
+  },
+  handler: async (ctx, { winnerId, allPlayerIds }): Promise<UpdateResult[]> => {
+    const playerCount = allPlayerIds.length;
+    const results: UpdateResult[] = [];
+
+    // Update winner
+    const winnerResult = await ctx.runMutation(
+      api.leaderboard.updatePlayerScore,
+      {
+        playerId: winnerId,
+        outcome: "win",
+        playerCount,
+        placement: 1,
+      }
+    );
+    results.push({
+      playerId: winnerId,
+      outcome: "win",
+      ...winnerResult,
+      score: 0,
+    });
+
+    // Update all losers
+    for (const playerId of allPlayerIds) {
+      if (playerId !== winnerId) {
+        const loserResult = await ctx.runMutation(
+          api.leaderboard.updatePlayerScore,
+          {
+            playerId,
+            outcome: "lose",
+            playerCount,
+          }
+        );
+        results.push({
+          playerId,
+          outcome: "lose",
+          ...loserResult,
+          score: 0,
+        });
+      }
+    }
+
+    return results;
   },
 });
 

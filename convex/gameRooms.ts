@@ -2,7 +2,7 @@ import { v } from "convex/values";
 import { query, mutation, action } from "./_generated/server";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { api } from "./_generated/api";
-import { getAccuracy, getWPM } from "./../src/lib/game";
+import { getAccuracy, getWPM, maskEmail } from "./../src/lib/game";
 import {
   customCtx,
   customMutation,
@@ -104,7 +104,7 @@ export const createRoom = mutation({
     await ctx.db.insert("players", {
       roomId,
       userId,
-      name: user.name || user.email || "Anonymous",
+      name: user.name || (user.email ? maskEmail(user.email) : "Anonymous"),
       progress: "",
       isReady: false,
       isHost: true,
@@ -114,7 +114,7 @@ export const createRoom = mutation({
   },
 });
 
-// Get list of public rooms
+// Get list of public rooms with updated player limit
 export const getPublicRooms = query({
   args: {},
   handler: async (ctx) => {
@@ -141,12 +141,15 @@ export const getPublicRooms = query({
         return {
           ...room,
           playerCount: players.length,
-          hostName: host?.name || host?.email || "Anonymous",
+
+          hostName:
+            host?.name || (host?.email ? maskEmail(host?.email) : "Anonymous"),
         };
       })
     );
 
-    return roomsWithPlayerCounts.filter((room) => room.playerCount < 2);
+    // Filter rooms that have space (less than 5 players)
+    return roomsWithPlayerCounts.filter((room) => room.playerCount < 5);
   },
 });
 
@@ -192,7 +195,8 @@ export const requestToJoinRoom = mutation({
     await ctx.db.insert("joinRequests", {
       roomId: args.roomId,
       requesterId: userId,
-      requesterName: user.name || user.email || "Anonymous",
+      requesterName:
+        user.name || (user.email ? maskEmail(user.email) : "Anonymous"),
       status: "pending",
       createdAt: Date.now(),
     });
@@ -221,7 +225,7 @@ export const getJoinRequests = query({
   },
 });
 
-// Accept/reject join request (host only)
+// Updated handleJoinRequest with new player limit
 export const handleJoinRequest = mutation({
   args: {
     requestId: v.id("joinRequests"),
@@ -241,14 +245,14 @@ export const handleJoinRequest = mutation({
     }
 
     if (args.action === "accept") {
-      // Check if room is still available
+      // Check if room is still available (5 players max)
       const players = await ctx.db
         .query("players")
         .withIndex("by_room", (q) => q.eq("roomId", request.roomId))
         .collect();
 
-      if (players.length >= 2) {
-        throw new Error("Room is now full");
+      if (players.length >= 5) {
+        throw new Error("Room is now full (5 players maximum)");
       }
 
       // Add player to room
@@ -271,7 +275,7 @@ export const handleJoinRequest = mutation({
   },
 });
 
-// Modified joinRoom for private rooms
+// Updated joinRoom for private rooms with new player limit
 export const joinRoom = mutation({
   args: { roomCode: v.string() },
   handler: async (ctx, args) => {
@@ -309,14 +313,14 @@ export const joinRoom = mutation({
       return { roomId: room._id, roomCode: room.roomCode };
     }
 
-    // Check if room is full
+    // Check if room is full (now 5 players max)
     const players = await ctx.db
       .query("players")
       .withIndex("by_room", (q) => q.eq("roomId", room._id))
       .collect();
 
-    if (players.length >= 2) {
-      throw new Error("Room is full");
+    if (players.length >= 5) {
+      throw new Error("Room is full (5 players maximum)");
     }
 
     await ctx.db.insert("players", {
@@ -478,6 +482,7 @@ export const getRoom = query({
   },
 });
 
+// Updated toggleReady for 2-5 players
 export const toggleReady = mutation({
   args: { roomId: v.id("gameRooms") },
   handler: async (ctx, args) => {
@@ -498,13 +503,14 @@ export const toggleReady = mutation({
       isReady: !player.isReady,
     });
 
-    // Check if both players are ready
+    // Check if we have enough players and all are ready
     const allPlayers = await ctx.db
       .query("players")
       .withIndex("by_room", (q) => q.eq("roomId", args.roomId))
       .collect();
 
-    if (allPlayers.length === 2 && allPlayers.every((p) => p.isReady)) {
+    // Need at least 2 players and all must be ready
+    if (allPlayers.length >= 2 && allPlayers.every((p) => p.isReady)) {
       // Start the game
       const randomPhrase = PHRASES[Math.floor(Math.random() * PHRASES.length)];
 
@@ -529,6 +535,7 @@ export const toggleReady = mutation({
   },
 });
 
+// Updated updateProgress for multiplayer (only one winner)
 export const updateProgress = mutationWithTriggers({
   args: {
     roomId: v.id("gameRooms"),
@@ -558,30 +565,16 @@ export const updateProgress = mutationWithTriggers({
       wpm: args.wpm,
     });
 
-    // Check if current player completed the phrase
-    if (room.currentPhrase && args.progress === room.currentPhrase) {
+    // Check if current player completed the phrase AND no winner exists yet
+    if (
+      room.currentPhrase &&
+      args.progress === room.currentPhrase &&
+      !room.winner
+    ) {
       const completionTime = Date.now();
 
       // Winner's completion time
       await ctx.db.patch(player._id, { completionTime });
-
-      // Find the loser
-      const otherPlayers = await ctx.db
-        .query("players")
-        .withIndex("by_room", (q) => q.eq("roomId", args.roomId))
-        .collect();
-
-      const loser = otherPlayers.find((p) => p.userId !== userId);
-      if (loser) {
-        await ctx.db.patch(loser._id, {
-          wpm:
-            loser.wpm ??
-            getWPM(loser.progress, loser.startTime as number, Date.now()),
-          accuracy:
-            loser.accuracy ?? getAccuracy(loser.progress, room.currentPhrase),
-          completionTime: loser.completionTime ?? Date.now(),
-        });
-      }
 
       // Mark room finished & winner
       await ctx.db.patch(args.roomId, {
@@ -589,7 +582,31 @@ export const updateProgress = mutationWithTriggers({
         winner: userId,
       });
 
-      // Save game history with both winner & loser data
+      // Update all other players' final stats
+      const allPlayers = await ctx.db
+        .query("players")
+        .withIndex("by_room", (q) => q.eq("roomId", args.roomId))
+        .collect();
+
+      for (const otherPlayer of allPlayers) {
+        if (otherPlayer.userId !== userId && !otherPlayer.completionTime) {
+          await ctx.db.patch(otherPlayer._id, {
+            wpm:
+              otherPlayer.wpm ??
+              getWPM(
+                otherPlayer.progress,
+                otherPlayer.startTime as number,
+                Date.now()
+              ),
+            accuracy:
+              otherPlayer.accuracy ??
+              getAccuracy(otherPlayer.progress, room.currentPhrase),
+            completionTime: otherPlayer.completionTime ?? Date.now(),
+          });
+        }
+      }
+
+      // Save game history with all players' data
       const updatedPlayers = await ctx.db
         .query("players")
         .withIndex("by_room", (q) => q.eq("roomId", args.roomId))
