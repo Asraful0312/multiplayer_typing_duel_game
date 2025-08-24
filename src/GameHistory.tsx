@@ -28,8 +28,6 @@ export function GameHistory({ roomId }: { roomId: Id<"gameRooms"> }) {
     return new Date(timestamp).toLocaleString();
   };
 
-  console.log("game histiory", gameHistory);
-
   return (
     <div className="w-full p-4 bg-white rounded shadow space-y-6">
       <h2 className="text-2xl font-bold mb-4">Game History</h2>

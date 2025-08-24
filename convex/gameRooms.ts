@@ -418,6 +418,56 @@ export const getRoomState = query({
   },
 });
 
+export const leaveRoom = mutation({
+  args: { roomId: v.id("gameRooms") },
+  handler: async (ctx, args) => {
+    const userId = await requireAuth(ctx);
+
+    // Find the player in the room
+    const player = await ctx.db
+      .query("players")
+      .withIndex("by_user_and_room", (q) =>
+        q.eq("userId", userId).eq("roomId", args.roomId)
+      )
+      .unique();
+
+    if (!player) {
+      // Already left
+      return;
+    }
+
+    // Remove the player
+    await ctx.db.delete(player._id);
+
+    // Check if the room is now empty
+    const remainingPlayers = await ctx.db
+      .query("players")
+      .withIndex("by_room", (q) => q.eq("roomId", args.roomId))
+      .collect();
+
+    if (remainingPlayers.length === 0) {
+      // Room is empty - delete everything
+      const requests = await ctx.db
+        .query("joinRequests")
+        .withIndex("by_room", (q) => q.eq("roomId", args.roomId))
+        .collect();
+      await Promise.all(requests.map((req) => ctx.db.delete(req._id)));
+      await ctx.db.delete(args.roomId);
+    } else {
+      // If the leaving player was the host, assign a new host
+      if (player.isHost) {
+        // Assign the first remaining player as the new host
+        const newHost = remainingPlayers[0];
+        await ctx.db.patch(newHost._id, { isHost: true });
+
+        // *** THIS IS THE CRITICAL FIX ***
+        // Update the room's hostId to point to the new host
+        await ctx.db.patch(args.roomId, { hostId: newHost.userId });
+      }
+    }
+  },
+});
+
 export const getRoom = query({
   args: {
     roomId: v.id("gameRooms"),
@@ -591,53 +641,6 @@ export const startNewRound = mutationWithTriggers({
         startTime: undefined,
         completionTime: undefined,
       });
-    }
-  },
-});
-
-export const leaveRoom = mutation({
-  args: { roomId: v.id("gameRooms") },
-  handler: async (ctx, args) => {
-    const userId = await requireAuth(ctx);
-    // Find the player in the room
-    const player = await ctx.db
-      .query("players")
-      .withIndex("by_user_and_room", (q) =>
-        q.eq("userId", userId).eq("roomId", args.roomId)
-      )
-      .unique();
-    if (!player) {
-      // Already left?
-      return;
-    }
-    // Remove the player
-    await ctx.db.delete(player._id);
-    // Check if the room is now empty -> delete the room?
-    const players = await ctx.db
-      .query("players")
-      .withIndex("by_room", (q) => q.eq("roomId", args.roomId))
-      .collect();
-    if (players.length === 0) {
-      // Also delete any join requests for this room?
-      const requests = await ctx.db
-        .query("joinRequests")
-        .withIndex("by_room", (q) => q.eq("roomId", args.roomId))
-        .collect();
-      await Promise.all(requests.map((req) => ctx.db.delete(req._id)));
-      await ctx.db.delete(args.roomId);
-    } else {
-      // If the leaving player was the host, assign a new host?
-      if (player.isHost) {
-        const remainingPlayers = await ctx.db
-          .query("players")
-          .withIndex("by_room", (q) => q.eq("roomId", args.roomId))
-          .collect();
-        if (remainingPlayers.length > 0) {
-          // Assign the first remaining player as the new host
-          const newHost = remainingPlayers[0];
-          await ctx.db.patch(newHost._id, { isHost: true });
-        }
-      }
     }
   },
 });

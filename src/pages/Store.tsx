@@ -134,7 +134,6 @@ export default function Store() {
           {filteredItems.map((item) => {
             const owned = isItemOwned(item._id);
             const canAfford = currentUser?.coins || 0 >= item.price;
-            console.log("can afford", canAfford);
             return (
               <Card
                 key={item._id}
@@ -198,7 +197,7 @@ export default function Store() {
                       <ShoppingCart className="w-4 h-4" />
                       {owned
                         ? "Owned"
-                        : currentUser?.coins || 0 < item?.price
+                        : currentUser?.coins && currentUser?.coins < item.price
                           ? "Can't Afford"
                           : "Buy now"}
                     </Button>

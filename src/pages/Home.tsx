@@ -1,7 +1,7 @@
 import { Authenticated, Unauthenticated, useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
-import { TypingDuelGame } from "@/TypingDuelGame";
 import { SignInForm } from "@/SignInForm";
+import CreateOrJoinRoom from "@/components/CreateOrJoinRoom";
 
 export default function Home() {
   return (
@@ -42,7 +42,7 @@ function Content() {
       </div>
 
       <Authenticated>
-        <TypingDuelGame />
+        <CreateOrJoinRoom />
       </Authenticated>
 
       <Unauthenticated>

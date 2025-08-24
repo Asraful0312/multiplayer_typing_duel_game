@@ -179,7 +179,8 @@ export default function Leaderboard() {
         </div>
 
         {/* Full Leaderboard */}
-        <Card className="overflow-x-scroll">
+        {/* Full Leaderboard */}
+        <Card className="overflow-hidden">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Trophy className="w-5 h-5" />
@@ -187,42 +188,48 @@ export default function Leaderboard() {
             </CardTitle>
           </CardHeader>
           <CardContent className="p-0">
-            <div className="space-y-1">
+            <div className="divide-y">
               {leaderboard?.map((player, index) => (
                 <div
                   key={player.rank}
-                  className={`flex items-center gap-4 p-4 hover:bg-muted/50 transition-colors ${
+                  className={`flex items-center gap-3 p-4 hover:bg-muted/50 transition-colors ${
                     index < 3 ? "bg-muted/30" : ""
                   }`}
                 >
                   {/* Rank */}
-                  <div className="flex items-center gap-2 w-16">
+                  <div className="flex items-center gap-2 w-14 shrink-0">
                     {getRankIcon(player.rank)}
-                    <span className="font-bold text-lg">#{player.rank}</span>
+                    <span className="font-bold text-sm sm:text-lg">
+                      #{player.rank}
+                    </span>
                   </div>
 
                   {/* Avatar & Username */}
-                  <div className="flex items-center gap-3 flex-1 min-w-0">
-                    <div className="text-2xl">🐉</div>
-                    <div>
-                      <h4 className="font-semibold truncate">{player.name}</h4>
-                      <p className="text-sm text-muted-foreground">Level</p>
+                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                    <div className="text-xl sm:text-2xl shrink-0">🐉</div>
+                    <div className="min-w-0">
+                      <h4 className="font-semibold truncate max-w-[120px] sm:max-w-[200px]">
+                        {player.name}
+                      </h4>
+                      <p className="text-xs sm:text-sm text-muted-foreground">
+                        Level
+                      </p>
                     </div>
                   </div>
 
-                  {/* Stats */}
-                  <div className="hidden sm:flex items-center gap-6 text-sm">
-                    <div className="text-center">
+                  {/* Desktop Stats */}
+                  <div className="hidden sm:flex items-center gap-6 text-sm shrink-0">
+                    <div className="text-center w-16">
                       <div className="font-bold">
                         {player.score.toLocaleString()}
                       </div>
                       <div className="text-muted-foreground">Score</div>
                     </div>
-                    <div className="text-center">
+                    <div className="text-center w-12">
                       <div className="font-bold">{player.wins}</div>
                       <div className="text-muted-foreground">Wins</div>
                     </div>
-                    <div className="text-center">
+                    <div className="text-center w-16">
                       <div className="font-bold">
                         {calculateWinPercentage(player.wins, player.totalGames)}
                         %
@@ -232,11 +239,11 @@ export default function Leaderboard() {
                   </div>
 
                   {/* Mobile Stats */}
-                  <div className="sm:hidden text-right">
+                  <div className="sm:hidden text-right shrink-0">
                     <div className="font-bold">
                       {player.score.toLocaleString()}
                     </div>
-                    <div className="text-sm text-muted-foreground">
+                    <div className="text-xs text-muted-foreground">
                       {player.wins || 0} wins
                     </div>
                   </div>

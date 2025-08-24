@@ -32,14 +32,12 @@ const CreateOrJoinRoom = () => {
   const requestToJoinRoom = useMutation(api.gameRooms.requestToJoinRoom);
   const publicRooms = useQuery(api.gameRooms.getPublicRooms);
 
-  // Get all join requests for the current user
   const userJoinRequests = useQuery(api.gameRooms.getUserJoinRequests);
 
   const handleInputFocus = async () => {
     try {
       if (navigator.clipboard && navigator.clipboard.readText) {
         const clipboardText = await navigator.clipboard.readText();
-        // Validate: exactly 4 letters/numbers
         if (/^[A-Za-z0-9]{4}$/.test(clipboardText)) {
           setRoomCode(clipboardText.toUpperCase());
           toast.success("PIN pasted from clipboard!");
@@ -84,7 +82,6 @@ const CreateOrJoinRoom = () => {
     }
   };
 
-  // Handle automatic redirects when requests are accepted
   useEffect(() => {
     if (userJoinRequests) {
       const acceptedRequest = userJoinRequests.find(
@@ -100,7 +97,6 @@ const CreateOrJoinRoom = () => {
     }
   }, [userJoinRequests, navigate]);
 
-  // Get join request status for a specific room
   const getJoinRequestForRoom = (roomId: Id<"gameRooms">) => {
     return userJoinRequests?.find((request) => request.roomId === roomId);
   };
@@ -125,7 +121,6 @@ const CreateOrJoinRoom = () => {
 
     const getStatusText = () => {
       if (!joinRequest) return "Request Join";
-
       switch (joinRequest.status) {
         case "pending":
           return "Pending...";
@@ -144,7 +139,7 @@ const CreateOrJoinRoom = () => {
     return (
       <Card key={room._id} className="hover:shadow-md transition-shadow">
         <CardContent className="p-4">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 mb-2">
                 <h3 className="font-semibold text-lg truncate">
@@ -154,7 +149,7 @@ const CreateOrJoinRoom = () => {
                   {room.roomCode}
                 </Badge>
               </div>
-              <div className="flex items-center gap-4 text-sm text-gray-600">
+              <div className="flex flex-wrap items-center gap-3 text-sm text-gray-600">
                 <div className="flex items-center gap-1">
                   <Crown className="h-4 w-4" />
                   <span>{room.hostName}</span>
@@ -172,7 +167,7 @@ const CreateOrJoinRoom = () => {
                 </div>
               </div>
             </div>
-            <div className="flex items-center gap-2 ml-3 shrink-0">
+            <div className="flex items-center gap-2 shrink-0">
               {getStatusIcon()}
               <Button
                 onClick={() => handleRequestToJoin(room._id)}
@@ -192,12 +187,14 @@ const CreateOrJoinRoom = () => {
   };
 
   return (
-    <div className="w-[500px] mx-auto space-y-6">
-      <div className="bg-white rounded-lg shadow-lg p-6">
-        <h2 className="text-2xl font-bold text-center mb-6">Join the Duel</h2>
+    <div className="w-full max-w-lg mx-auto  sm:px-0 space-y-6">
+      <div className="bg-white rounded-lg shadow-lg p-4 sm:p-6">
+        <h2 className="text-xl sm:text-2xl font-bold text-center mb-6">
+          Join the Duel
+        </h2>
 
         {/* Tab Navigation */}
-        <div className="flex space-x-1 mb-6 bg-gray-100 p-1 rounded-lg">
+        <div className="flex flex-col sm:flex-row sm:space-x-1 mb-6 bg-gray-100 p-1 rounded-lg">
           <button
             onClick={() => setActiveTab("create")}
             className={`flex-1 py-2 px-4 rounded-md font-medium transition-colors ${
@@ -242,10 +239,10 @@ const CreateOrJoinRoom = () => {
                 className="w-full"
                 maxLength={30}
               />
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <Button
                   onClick={() => handleCreateRoom("private")}
-                  className="w-full hover:bg-transparent"
+                  className="w-full"
                   variant="outline"
                 >
                   Create Private Room
@@ -281,7 +278,7 @@ const CreateOrJoinRoom = () => {
                 value={roomCode}
                 onChange={(e) => setRoomCode(e.target.value.toUpperCase())}
                 onFocus={handleInputFocus}
-                className="w-full"
+                className="w-full text-center tracking-widest uppercase"
                 maxLength={4}
               />
               <Button onClick={handleJoinRoom} className="w-full">

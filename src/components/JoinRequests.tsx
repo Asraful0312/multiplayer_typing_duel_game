@@ -73,7 +73,7 @@ const JoinRequests = ({ joinRequests, roomCode }: Props) => {
                   <Button
                     onClick={() => handleRequest(request._id, "accept")}
                     size="sm"
-                    className="bg-green-600 hover:bg-green-700"
+                    className="bg-green-500 hover:bg-green-600 text-white"
                   >
                     <Check className="h-4 w-4 mr-1" />
                     Accept
